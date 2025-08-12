@@ -37,7 +37,7 @@ from utils import (
     verify_token, generate_random_token,
     check_user_permission, log_audit
 )
-from migrations.manager import MigrationManager
+from schema_manager import SchemaManager
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -55,8 +55,8 @@ ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 REFRESH_TOKEN_EXPIRE_DAYS = 7
 
-# Migration manager
-migration_manager = MigrationManager()
+# Schema manager for creating tables from SQLAlchemy models
+schema_manager = SchemaManager()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -152,9 +152,14 @@ async def initialize_tenant_schema(
 ):
     """Initialize a new tenant schema with all required tables"""
     try:
-        # Run migrations for the new tenant
-        migration_manager.create_tenant_schema(schema_name)
-        migration_manager.run_tenant_migrations(schema_name)
+        # Initialize schema with all tables from SQLAlchemy models
+        result = schema_manager.initialize_tenant_schema(tenant_id, schema_name)
+
+        if result["status"] != "success":
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to initialize schema: {result.get('errors', ['Unknown error'])}"
+            )
 
         # Log the action
         logger.info(f"Initialized schema for tenant {tenant_id}: {schema_name}")

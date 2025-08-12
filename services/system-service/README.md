@@ -2,7 +2,7 @@
 
 ## 📋 Overview
 
-The System Service is a dedicated microservice responsible for managing **tenant-specific** users, roles, permissions, and settings. This service handles all user management operations within each tenant's isolated schema.
+The System Service is a dedicated microservice responsible for managing **tenant-specific** users, roles, permissions, and settings. This service handles all user management operations within each tenant's isolated schema using SQLAlchemy models for table creation and management.
 
 ## 🏗️ Architecture
 
@@ -27,14 +27,15 @@ The System Service is a dedicated microservice responsible for managing **tenant
 │  • Roles & permissions (tenant_*.roles, permissions)       │
 │  • Settings (tenant_*.settings)                            │
 │  • Teams (tenant_*.teams)                                  │
-│  • Audit logs (tenant_*.audit_logs)                        │
+│  • Extended models (notes, tasks, events, etc.)            │
 └─────────────────────────────────────────────────────────────┘
 ```
 
 ### Database Schema Structure
 
-Each tenant has its own isolated schema with the following tables:
+Each tenant has its own isolated schema with tables created from SQLAlchemy models:
 
+#### Core System Tables (from `models.py`)
 - `users` - Tenant-specific users
 - `roles` - Customizable roles
 - `permissions` - Granular permissions
@@ -50,36 +51,51 @@ Each tenant has its own isolated schema with the following tables:
 - `email_verification_tokens` - Email verification
 - `api_keys` - API access keys
 
+#### Extended Tables (from `models_extended.py`)
+- `notes` - Notes system with polymorphic relationships
+- `logacalls` - Call logging and tracking
+- `tasks` - Task management with polymorphic relationships
+- `attachments` - File attachment management
+- `events` - Event and calendar system
+- `carbon_footprints` - Carbon emission tracking
+- `channel_configs` - Communication channel configuration
+- `reviews` - Review system
+
+#### Template Tables (from `init.sql`)
+- `activity_log` - Basic activity logging (created from tenant_template)
+
 ## 🚀 Key Features
 
-### 1. **Complete User Isolation**
+### 1. **Model-Based Table Creation**
+- Tables are defined using SQLAlchemy models (Python)
+- No SQL migration files needed
+- Automatic schema generation from models
+- Type-safe and maintainable
+
+### 2. **Complete User Isolation**
 - Each tenant has its own user table
 - No cross-tenant data leakage possible
 - Users can have same email/username across different tenants
 
-### 2. **Flexible Role System**
-- Default roles: admin, manager, user, viewer, guest
+### 3. **Flexible Role System**
+- Default roles: admin, manager, user, viewer
 - Custom roles can be created per tenant
 - Role priority system for conflict resolution
 
-### 3. **Granular Permissions**
-- Resource-based permissions (user, role, project, document, etc.)
-- Action-based permissions (create, read, update, delete, etc.)
-- Permission inheritance through roles
-- Direct permission grants/denials to users
+### 4. **Extended Functionality**
+- Notes management with priorities and assignments
+- Task tracking with status and due dates
+- Event scheduling and calendar
+- File attachments with versioning
+- Call logging system
+- Carbon footprint tracking
+- Multi-channel communication config
 
-### 4. **Comprehensive Audit Logging**
+### 5. **Comprehensive Audit Logging**
 - All actions are logged
 - IP tracking
 - Session tracking
 - Change history with before/after values
-
-### 5. **Advanced Security**
-- Password policies per tenant
-- Account lockout after failed attempts
-- Two-factor authentication support
-- API key management
-- Session management with expiration
 
 ## 📁 Project Structure
 
@@ -88,15 +104,39 @@ system-service/
 ├── Dockerfile              # Docker configuration
 ├── requirements.txt        # Python dependencies
 ├── main.py                # FastAPI application
-├── models.py              # SQLAlchemy models
+├── models.py              # Core SQLAlchemy models
+├── models_extended.py     # Extended feature models
 ├── schemas.py             # Pydantic schemas
 ├── database.py            # Database connections
+├── schema_manager.py      # Schema and table management
 ├── utils.py               # Utility functions
-├── migrations/            # Database migrations
-│   ├── 001_initial_tenant_structure.sql
-│   └── manager.py         # Migration manager
 └── tests/                 # Unit tests
 ```
+
+## 🔧 Schema Management System
+
+The service uses `SchemaManager` to handle all schema operations:
+
+```python
+from schema_manager import SchemaManager
+
+manager = SchemaManager()
+
+# Initialize a new tenant schema with all tables
+result = manager.initialize_tenant_schema(tenant_id, schema_name)
+
+# List tables in a schema
+tables = manager.list_tables_in_schema(schema_name)
+
+# Get schema information
+info = manager.get_schema_info(schema_name)
+```
+
+### How It Works
+
+1. **Tenant Creation**: When a new tenant is created, only `activity_log` is copied from `tenant_template`
+2. **Schema Initialization**: The system-service creates all other tables using SQLAlchemy models
+3. **Model-Based**: All tables are defined in Python, making them easy to maintain and version
 
 ## 🔧 Environment Variables
 
@@ -118,6 +158,9 @@ SERVICE_PORT=8004
 
 ## 📡 API Endpoints
 
+### Schema Management
+- `POST /api/v1/tenants/{tenant_id}/initialize` - Initialize tenant schema with all tables
+
 ### Authentication
 - `POST /api/v1/tenants/{tenant_slug}/auth/login` - Tenant user login
 - `POST /api/v1/tenants/{tenant_slug}/auth/logout` - Logout
@@ -133,43 +176,50 @@ SERVICE_PORT=8004
 ### Role Management
 - `GET /api/v1/tenants/{tenant_slug}/roles` - List roles
 - `POST /api/v1/tenants/{tenant_slug}/roles` - Create role
-- `GET /api/v1/tenants/{tenant_slug}/roles/{id}` - Get role
-- `PUT /api/v1/tenants/{tenant_slug}/roles/{id}` - Update role
-- `DELETE /api/v1/tenants/{tenant_slug}/roles/{id}` - Delete role
-
-### Permission Management
-- `GET /api/v1/tenants/{tenant_slug}/permissions` - List permissions
-- `POST /api/v1/tenants/{tenant_slug}/permissions` - Create permission
-- `POST /api/v1/tenants/{tenant_slug}/roles/{id}/permissions` - Assign permissions to role
-- `POST /api/v1/tenants/{tenant_slug}/users/{id}/permissions` - Grant/deny user permissions
 
 ### Settings Management
 - `GET /api/v1/tenants/{tenant_slug}/settings` - List settings
 - `PUT /api/v1/tenants/{tenant_slug}/settings/{id}` - Update setting
 
-### Team Management
-- `GET /api/v1/tenants/{tenant_slug}/teams` - List teams
-- `POST /api/v1/tenants/{tenant_slug}/teams` - Create team
-- `POST /api/v1/tenants/{tenant_slug}/teams/{id}/members` - Add team member
+## 📊 Models Structure
 
-### Tenant Schema Management
-- `POST /api/v1/tenants/{tenant_id}/initialize` - Initialize tenant schema
-
-## 🔄 Migration System
-
-The service includes a migration system that:
-1. Creates tenant schemas on demand
-2. Applies migrations to keep schemas updated
-3. Seeds default data (roles, permissions, settings)
-
-### Running Migrations
-
+### Core Models (`models.py`)
 ```python
-# Automatically run when initializing a tenant
-POST /api/v1/tenants/{tenant_id}/initialize
-{
-  "schema_name": "tenant_company1"
-}
+- Role: System roles with priorities
+- Permission: Granular permissions
+- User: Tenant users with comprehensive profile
+- Team: Organizational units
+- UserSession: Active sessions
+- Setting: Configuration options
+- AuditLog: Activity tracking
+- ApiKey: API access management
+```
+
+### Extended Models (`models_extended.py`)
+```python
+- Note: Notes with polymorphic relationships (notable_type, notable_id)
+- LogCall: Call tracking (logacallable_type, logacallable_id)
+- Task: Task management (taskable_type, taskable_id)
+- Attachment: File management (attachable_type, attachable_id)
+- Event: Calendar events (eventable_type, eventable_id)
+- CarbonFootprint: Emission tracking
+- ChannelConfig: Communication channels
+- Review: Review system
+```
+
+## 🔄 Table Creation Flow
+
+```mermaid
+graph TD
+    A[New Tenant Created] --> B[tenant_template.activity_log copied]
+    B --> C[Schema created: tenant_tenantX]
+    C --> D[System Service Initialize]
+    D --> E[SchemaManager.initialize_tenant_schema]
+    E --> F[Create tables from models.py]
+    F --> G[Create tables from models_extended.py]
+    G --> H[Run post-creation tasks]
+    H --> I[Insert default data]
+    I --> J[Tenant Ready]
 ```
 
 ## 🔐 Security Model
@@ -199,6 +249,12 @@ pytest tests/
 
 # Run with coverage
 pytest --cov=. tests/
+
+# Test schema creation
+python schema_manager.py create test_schema
+
+# List tables in schema
+python schema_manager.py list test_schema
 ```
 
 ## 🚦 Health Checks
@@ -206,50 +262,12 @@ pytest --cov=. tests/
 - `GET /health` - Basic health check
 - `GET /ready` - Readiness check (database, redis)
 
-## 📊 Default Roles and Permissions
-
-### Roles Created on Tenant Initialization
-
-| Role | Priority | Description |
-|------|----------|-------------|
-| admin | 100 | Full access to all resources |
-| manager | 80 | Manage users and most resources |
-| user | 50 | Standard user access |
-| viewer | 30 | Read-only access |
-| guest | 10 | Limited temporary access |
-
-### Default Permissions
-
-| Permission | Resource | Action | Description |
-|------------|----------|--------|-------------|
-| users.create | user | create | Create new users |
-| users.read | user | read | View user information |
-| users.update | user | update | Update user information |
-| users.delete | user | delete | Delete users |
-| roles.* | role | * | Role management |
-| settings.* | setting | * | Settings management |
-| ... | ... | ... | ... |
-
-## 🔄 Integration with Other Services
-
-### Communication Flow
-```
-Frontend → API Gateway → System Service → Tenant DB
-                     ↓
-              Auth Service (verify token)
-```
-
-### Service Dependencies
-- **PostgreSQL**: Main database
-- **Redis**: Session storage, caching
-- **RabbitMQ**: Async task processing
-
 ## 📈 Performance Considerations
 
 1. **Connection Pooling**: Each tenant gets its own connection pool
 2. **Caching**: Redis caching for frequently accessed data
-3. **Indexes**: Optimized indexes on all foreign keys and search fields
-4. **Soft Deletes**: Users are soft-deleted to maintain referential integrity
+3. **Indexes**: Automatically created from model definitions
+4. **Soft Deletes**: Supported through `deleted_at` columns
 
 ## 🛠️ Development
 
@@ -257,9 +275,6 @@ Frontend → API Gateway → System Service → Tenant DB
 ```bash
 # Install dependencies
 pip install -r requirements.txt
-
-# Run migrations
-python migrations/manager.py upgrade
 
 # Start service
 uvicorn main:app --reload --port 8004
@@ -274,26 +289,43 @@ docker build -t system-service .
 docker run -p 8004:8004 system-service
 ```
 
-## 📝 Notes
+### Adding New Tables
 
-- This service manages ONLY tenant-level users
-- Platform administrators are managed by auth-service
+1. Define the model in `models_extended.py`:
+```python
+class NewFeature(Base):
+    __tablename__ = "new_features"
+    
+    id = Column(BigInteger, primary_key=True)
+    name = Column(String(255), nullable=False)
+    # ... more fields
+```
+
+2. Import the model in `schema_manager.py`
+3. Restart the service
+4. New tenants will automatically get the new table
+
+## 📝 Important Notes
+
+- Tables are created from SQLAlchemy models, NOT from SQL files
+- The only SQL-created table is `activity_log` from `tenant_template`
 - Each tenant's data is completely isolated
-- Migrations are versioned and applied per tenant
-- All operations are audited
+- All extended features support polymorphic relationships
+- Soft deletes are implemented using `deleted_at` columns
 
 ## 🔮 Future Enhancements
 
-- [ ] Bulk user import/export
-- [ ] Advanced permission templates
-- [ ] LDAP/AD integration per tenant
-- [ ] OAuth provider per tenant
-- [ ] User impersonation for support
+- [ ] GraphQL API support
+- [ ] Real-time updates via WebSockets
 - [ ] Advanced audit log analytics
-- [ ] Automated user provisioning workflows
+- [ ] Automated backup per tenant
+- [ ] Data export/import tools
+- [ ] Multi-language support
+- [ ] Advanced search with Elasticsearch
 
 ---
 
-**Version**: 1.0.0  
-**Last Updated**: December 2024  
+**Version**: 2.0.0  
+**Last Updated**: January 2025  
+**Architecture**: Model-Based Schema Management  
 **Maintainer**: Platform Team

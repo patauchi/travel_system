@@ -21,7 +21,7 @@ from database import get_db, engine, Base, db_manager
 from models import Tenant, TenantUser, User, SubscriptionHistory, TenantFeature, FeatureFlag
 from auth_middleware import verify_token, get_current_user, require_super_admin, require_tenant_admin
 from tasks import provision_tenant_resources, cleanup_tenant_resources
-from create_tenant_v2 import TenantCreateV2, create_tenant_v2
+from create_tenant_v2 import TenantCreateV2, create_tenant_v2, initialize_tenant_schema
 
 # Redis client
 redis_client = redis.Redis(
@@ -245,6 +245,12 @@ async def create_tenant(
         db.add(new_tenant)
         db.commit()
         db.refresh(new_tenant)
+
+        # Initialize schema with tables using system-service
+        tenant_id = str(new_tenant.id)
+        if not initialize_tenant_schema(tenant_id, schema_name):
+            logger.warning(f"Failed to initialize schema with system-service for tenant {tenant_id}")
+            # Continue anyway as the schema was created
 
         # Save user
         db.add(owner_user)
