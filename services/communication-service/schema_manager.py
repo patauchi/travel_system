@@ -9,7 +9,9 @@ from sqlalchemy import create_engine, text, inspect
 from sqlalchemy.pool import NullPool
 import os
 
-from models import Base
+# Import Base from both modules
+from inbox.models import Base as InboxBase
+from chat.models import Base as ChatBase
 from sqlalchemy.schema import MetaData
 
 # Configure logging
@@ -86,8 +88,9 @@ class SchemaManager:
                 echo=False
             )
 
-            # Create all tables from models
-            Base.metadata.create_all(bind=engine, checkfirst=True)
+            # Create all tables from both inbox and chat models
+            InboxBase.metadata.create_all(bind=engine, checkfirst=True)
+            ChatBase.metadata.create_all(bind=engine, checkfirst=True)
 
             logger.info(f"Communication tables created successfully for schema {schema_name}")
 

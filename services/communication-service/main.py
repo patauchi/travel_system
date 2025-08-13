@@ -1,21 +1,29 @@
 """
-Communication Service - Main Application
-Handles inbox conversations, messages, chats and communication features
+Communication Service Main Application
+FastAPI application for handling all communication-related operations
 """
 
-from fastapi import FastAPI, Request, HTTPException, status
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
 import logging
 import os
-import httpx
-from datetime import datetime
+from typing import Dict, Any
 
-from database import verify_connection, cleanup_engines
+# Import database and schema management
+from database import get_tenant_db, verify_connection
 from schema_manager import SchemaManager
-from endpoints import include_routers
-from communication_endpoints import router as communication_router
+
+# Import routers from modules
+from inbox.endpoints import (
+    conversations_router,
+    messages_router,
+    quick_replies_router
+)
+from chat.endpoints import (
+    channels_router,
+    chat_router
+)
 
 # Configure logging
 logging.basicConfig(
@@ -24,16 +32,14 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Initialize schema manager
+# Schema manager instance
 schema_manager = SchemaManager()
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
     Manage application lifecycle
     """
-    # Startup
     logger.info("Starting Communication Service...")
 
     # Verify database connection
@@ -41,275 +47,195 @@ async def lifespan(app: FastAPI):
         logger.error("Failed to connect to database")
         raise Exception("Database connection failed")
 
-    logger.info("Database connection established")
+    logger.info("Communication Service started successfully")
 
     yield
 
-    # Shutdown
+    # Cleanup
     logger.info("Shutting down Communication Service...")
+    from database import cleanup_engines
     cleanup_engines()
-    logger.info("Communication Service stopped")
-
 
 # Create FastAPI application
 app = FastAPI(
     title="Communication Service",
-    description="Multi-tenant communication service for inbox, messages, and chat",
+    description="API for managing inbox conversations, messages, chat channels, and communication features",
     version="1.0.0",
     lifespan=lifespan
 )
 
-# CORS middleware
+# Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # In production, replace with specific origins
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Include API routers
-include_routers(app)
+# ============================================
+# INCLUDE ROUTERS
+# ============================================
 
-# Include communication endpoints router
-app.include_router(
-    communication_router,
-    prefix="/api/v1",
-    tags=["communications"]
-)
+# Inbox module routers
+app.include_router(conversations_router)
+app.include_router(messages_router)
+app.include_router(quick_replies_router)
 
+# Chat module routers
+app.include_router(channels_router)
+app.include_router(chat_router)
 
 # ============================================
-# HEALTH CHECK ENDPOINTS
+# ROOT ENDPOINTS
 # ============================================
+
+@app.get("/")
+async def root():
+    """Root endpoint"""
+    return {
+        "service": "Communication Service",
+        "version": "1.0.0",
+        "status": "running",
+        "modules": {
+            "inbox": {
+                "description": "Handles inbox conversations, messages, and quick replies",
+                "endpoints": [
+                    "/api/v1/tenants/{tenant_slug}/conversations",
+                    "/api/v1/tenants/{tenant_slug}/messages",
+                    "/api/v1/tenants/{tenant_slug}/quick-replies"
+                ]
+            },
+            "chat": {
+                "description": "Handles chat channels, members, and entries",
+                "endpoints": [
+                    "/api/v1/tenants/{tenant_slug}/channels",
+                    "/api/v1/tenants/{tenant_slug}/chat"
+                ]
+            }
+        }
+    }
 
 @app.get("/health")
 async def health_check():
-    """Basic health check endpoint"""
-    return {
-        "status": "healthy",
-        "service": "communication-service",
-        "timestamp": datetime.utcnow().isoformat()
-    }
-
-
-@app.get("/ready")
-async def readiness_check():
-    """Readiness check endpoint"""
-    checks = {
-        "database": verify_connection()
-    }
-
-    if all(checks.values()):
-        return {
-            "status": "ready",
-            "checks": checks
-        }
-    else:
-        return JSONResponse(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            content={
-                "status": "not ready",
-                "checks": checks
-            }
-        )
-
-
-# ============================================
-# TENANT INITIALIZATION ENDPOINT
-# ============================================
-
-@app.post("/api/v1/tenants/{tenant_id}/initialize")
-async def initialize_tenant(tenant_id: str, request: Request):
-    """
-    Initialize communication tables for a new tenant
-    This endpoint is called by tenant-service when creating a new tenant
-    """
+    """Health check endpoint"""
     try:
-        # Get request body
-        body = await request.json()
-        schema_name = body.get("schema_name", f"tenant_{tenant_id}")
-
-        logger.info(f"Initializing communication schema for tenant {tenant_id}")
-
-        # Initialize schema with all communication tables
-        result = schema_manager.initialize_tenant_schema(tenant_id, schema_name)
-
-        if result["status"] == "success":
-            logger.info(f"Successfully initialized tenant {tenant_id} with {len(result['tables_created'])} tables")
-
-            # Optional: Notify other services or perform additional setup
-            # await notify_other_services(tenant_id, schema_name)
-
-            return {
-                "status": "success",
-                "tenant_id": tenant_id,
-                "schema_name": schema_name,
-                "tables_created": result["tables_created"],
-                "message": f"Communication service initialized with {len(result['tables_created'])} tables"
+        # You could add database connectivity check here
+        return {
+            "status": "healthy",
+            "service": "Communication Service",
+            "modules": {
+                "inbox": "active",
+                "chat": "active"
             }
-        else:
-            logger.error(f"Failed to initialize tenant {tenant_id}: {result.get('errors')}")
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Failed to initialize tenant: {result.get('errors')}"
-            )
-
+        }
     except Exception as e:
-        logger.error(f"Error initializing tenant {tenant_id}: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error initializing tenant: {str(e)}"
-        )
+        logger.error(f"Health check failed: {str(e)}")
+        raise HTTPException(status_code=503, detail="Service unhealthy")
 
-
-@app.get("/api/v1/tenants/{tenant_id}/schema/info")
-async def get_tenant_schema_info(tenant_id: str):
-    """Get information about a tenant's schema"""
-    schema_name = f"tenant_{tenant_id}"
-    info = schema_manager.get_schema_info(schema_name)
-
-    if not info["exists"]:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Schema for tenant {tenant_id} not found"
-        )
-
-    return info
-
+@app.get("/api/v1/info")
+async def service_info():
+    """Get service information"""
+    return {
+        "service": "Communication Service",
+        "version": "1.0.0",
+        "description": "Manages all communication-related operations",
+        "features": [
+            "Multi-channel inbox (WhatsApp, Email, Messenger, etc.)",
+            "Real-time chat channels",
+            "Quick reply templates",
+            "Message threading and conversations",
+            "User mentions and reactions",
+            "Channel member management",
+            "Read receipts and delivery status",
+            "Multi-tenant support"
+        ],
+        "api_documentation": "/docs",
+        "modules": {
+            "inbox": {
+                "models": ["InboxConversation", "InboxMessage", "InboxQuickReply"],
+                "features": [
+                    "Multi-channel conversations",
+                    "Message tracking",
+                    "Quick replies",
+                    "Lead qualification",
+                    "Conversation assignment"
+                ]
+            },
+            "chat": {
+                "models": ["Channel", "ChannelMember", "ChatEntry", "Mention"],
+                "features": [
+                    "Public/Private channels",
+                    "Direct messaging",
+                    "User mentions",
+                    "Message reactions",
+                    "Read receipts",
+                    "Channel roles and permissions"
+                ]
+            }
+        }
+    }
 
 # ============================================
 # WEBHOOK ENDPOINTS
 # ============================================
 
-@app.post("/webhooks/whatsapp")
-async def whatsapp_webhook(request: Request):
-    """Webhook endpoint for WhatsApp messages"""
-    try:
-        body = await request.json()
-        logger.info(f"Received WhatsApp webhook: {body}")
+@app.post("/api/v1/webhooks/incoming/{channel}")
+async def receive_webhook(
+    channel: str,
+    payload: Dict[Any, Any]
+):
+    """
+    Receive incoming webhooks from external services
+    (WhatsApp, Messenger, Email providers, etc.)
+    """
+    logger.info(f"Received webhook from {channel}: {payload}")
 
-        # Process webhook based on your WhatsApp provider (Twilio, WhatsApp Business API, etc.)
-        # This is a placeholder implementation
+    # Here you would process the incoming webhook based on the channel
+    # and create appropriate inbox conversations/messages
 
-        return {"status": "received"}
-
-    except Exception as e:
-        logger.error(f"Error processing WhatsApp webhook: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid webhook payload"
-        )
-
-
-@app.post("/webhooks/messenger")
-async def messenger_webhook(request: Request):
-    """Webhook endpoint for Facebook Messenger"""
-    try:
-        body = await request.json()
-        logger.info(f"Received Messenger webhook: {body}")
-
-        # Process webhook based on Facebook Messenger API
-        # This is a placeholder implementation
-
-        return {"status": "received"}
-
-    except Exception as e:
-        logger.error(f"Error processing Messenger webhook: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid webhook payload"
-        )
-
-
-@app.post("/webhooks/email")
-async def email_webhook(request: Request):
-    """Webhook endpoint for email notifications"""
-    try:
-        body = await request.json()
-        logger.info(f"Received email webhook: {body}")
-
-        # Process email webhook (SendGrid, AWS SES, etc.)
-        # This is a placeholder implementation
-
-        return {"status": "received"}
-
-    except Exception as e:
-        logger.error(f"Error processing email webhook: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid webhook payload"
-        )
-
+    return {"status": "received", "channel": channel}
 
 # ============================================
 # ERROR HANDLERS
 # ============================================
 
-@app.exception_handler(HTTPException)
-async def http_exception_handler(request: Request, exc: HTTPException):
-    """Handle HTTP exceptions"""
-    return JSONResponse(
-        status_code=exc.status_code,
-        content={
-            "error": exc.detail,
-            "status_code": exc.status_code,
-            "timestamp": datetime.utcnow().isoformat()
-        }
-    )
+@app.exception_handler(404)
+async def not_found_handler(request, exc):
+    """Handle 404 errors"""
+    return {
+        "error": "Not Found",
+        "message": "The requested resource was not found",
+        "path": str(request.url)
+    }
 
-
-@app.exception_handler(Exception)
-async def general_exception_handler(request: Request, exc: Exception):
-    """Handle general exceptions"""
-    logger.error(f"Unhandled exception: {str(exc)}")
-    return JSONResponse(
-        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        content={
-            "error": "Internal server error",
-            "status_code": 500,
-            "timestamp": datetime.utcnow().isoformat()
-        }
-    )
-
+@app.exception_handler(500)
+async def internal_error_handler(request, exc):
+    """Handle 500 errors"""
+    logger.error(f"Internal error: {exc}")
+    return {
+        "error": "Internal Server Error",
+        "message": "An internal error occurred"
+    }
 
 # ============================================
-# UTILITY FUNCTIONS
+# MAIN ENTRY POINT
 # ============================================
-
-async def notify_other_services(tenant_id: str, schema_name: str):
-    """
-    Notify other services about tenant initialization
-    """
-    # This is optional - you can notify other services if needed
-    services_to_notify = [
-        # Add service URLs if needed
-        # "http://booking-service:8005",
-        # "http://financial-service:8006",
-    ]
-
-    async with httpx.AsyncClient() as client:
-        for service_url in services_to_notify:
-            try:
-                response = await client.post(
-                    f"{service_url}/api/v1/tenants/{tenant_id}/sync",
-                    json={"schema_name": schema_name},
-                    timeout=5.0
-                )
-                logger.info(f"Notified {service_url} about tenant {tenant_id}")
-            except Exception as e:
-                logger.warning(f"Failed to notify {service_url}: {str(e)}")
-
 
 if __name__ == "__main__":
     import uvicorn
 
-    port = int(os.getenv("SERVICE_PORT", "8010"))
+    # Get configuration from environment variables
+    host = os.getenv("HOST", "0.0.0.0")
+    port = int(os.getenv("PORT", 8003))
+    reload = os.getenv("RELOAD", "true").lower() == "true"
+
+    logger.info(f"Starting server on {host}:{port}")
 
     uvicorn.run(
         "main:app",
-        host="0.0.0.0",
+        host=host,
         port=port,
-        reload=True,
+        reload=reload,
         log_level="info"
     )

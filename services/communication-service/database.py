@@ -221,8 +221,10 @@ def cleanup_engines():
     Cleanup all cached tenant engines
     Called during shutdown
     """
-    for engine in _tenant_engines.values():
-        engine.dispose()
+    global engine
+
+    for tenant_engine in _tenant_engines.values():
+        tenant_engine.dispose()
     _tenant_engines.clear()
 
     # Also dispose main engine

@@ -11,6 +11,7 @@ A production-ready multi-tenant SaaS platform built with microservices architect
 - **API Gateway**: Centralized routing and request handling
 - **Async Task Processing**: Celery workers for background jobs
 - **Real-time Monitoring**: RabbitMQ and Flower for task monitoring
+- **Database Management**: pgAdmin for PostgreSQL administration
 - **Container Orchestration**: Docker and Docker Compose for easy deployment
 - **React Frontend**: Modern responsive UI with Material-UI
 
@@ -27,6 +28,7 @@ multitenant-platform/
 │   └── src/                  # React source code
 ├── infrastructure/           # Infrastructure configuration
 │   ├── nginx/               # Nginx configuration
+│   ├── pgadmin/             # pgAdmin configuration
 │   ├── postgres/            # PostgreSQL initialization scripts
 │   └── redis/               # Redis configuration
 ├── services/                 # Microservices
@@ -146,6 +148,11 @@ docker-compose ps
 - Username: `admin`
 - Password: `admin123`
 
+### pgAdmin (Database Management)
+- URL: http://localhost:5050
+- Email: `admin@admin.com`
+- Password: `admin123`
+
 ## 🔗 Service URLs
 
 | Service | URL | Description |
@@ -156,6 +163,7 @@ docker-compose ps
 | Tenant Service | http://localhost:8002 | Tenant management API |
 | Business Service | http://localhost:8003 | Business logic API |
 | System Service | http://localhost:8004 | System management API |
+| pgAdmin | http://localhost:5050 | PostgreSQL database management |
 | RabbitMQ Admin | http://localhost:15672 | Message broker UI |
 | Flower | http://localhost:5555 | Celery monitoring |
 

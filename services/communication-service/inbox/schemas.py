@@ -1,6 +1,6 @@
 """
-Pydantic Schemas for Communication Service
-Request/Response models for API endpoints
+Inbox Schemas
+Pydantic schemas for inbox-related API endpoints
 """
 
 from pydantic import BaseModel, Field, validator
@@ -190,150 +190,6 @@ class QuickReplyResponse(QuickReplyBase):
 
 
 # ============================================
-# CHANNEL SCHEMAS
-# ============================================
-
-class ChannelBase(BaseModel):
-    name: str = Field(..., max_length=255)
-    slug: str = Field(..., max_length=100)
-    description: Optional[str] = None
-    type: str = Field(default='public', max_length=50)
-    max_members: Optional[int] = None
-
-
-class ChannelCreate(ChannelBase):
-    pass
-
-
-class ChannelUpdate(BaseModel):
-    name: Optional[str] = Field(None, max_length=255)
-    description: Optional[str] = None
-    is_archived: Optional[bool] = None
-    is_read_only: Optional[bool] = None
-    max_members: Optional[int] = None
-    settings: Optional[Dict[str, Any]] = None
-
-
-class ChannelResponse(ChannelBase):
-    id: int
-    is_archived: bool
-    is_read_only: bool
-    created_by: UUID
-    settings: Dict[str, Any]
-    created_at: datetime
-    updated_at: datetime
-    archived_at: Optional[datetime]
-    member_count: Optional[int] = 0
-
-    class Config:
-        from_attributes = True
-
-
-# ============================================
-# CHANNEL MEMBER SCHEMAS
-# ============================================
-
-class ChannelMemberBase(BaseModel):
-    user_id: UUID
-    role: str = Field(default='member', max_length=50)
-    nickname: Optional[str] = Field(None, max_length=100)
-
-
-class ChannelMemberAdd(ChannelMemberBase):
-    pass
-
-
-class ChannelMemberUpdate(BaseModel):
-    role: Optional[str] = Field(None, max_length=50)
-    nickname: Optional[str] = Field(None, max_length=100)
-    is_muted: Optional[bool] = None
-    notification_level: Optional[str] = Field(None, max_length=50)
-
-
-class ChannelMemberResponse(ChannelMemberBase):
-    id: int
-    channel_id: int
-    is_muted: bool
-    notification_level: str
-    last_read_at: Optional[datetime]
-    last_read_entry_id: Optional[int]
-    unread_count: int
-    joined_at: datetime
-    left_at: Optional[datetime]
-
-    class Config:
-        from_attributes = True
-
-
-# ============================================
-# CHAT ENTRY SCHEMAS
-# ============================================
-
-class ChatEntryBase(BaseModel):
-    type: str = Field(default='message', max_length=50)
-    content: Optional[str] = None
-    attachments: Optional[List[Dict[str, Any]]] = None
-    reply_to_id: Optional[int] = None
-
-
-class ChatEntryCreate(ChatEntryBase):
-    mentions: Optional[List[UUID]] = []
-
-
-class ChatEntryUpdate(BaseModel):
-    content: Optional[str] = None
-    attachments: Optional[List[Dict[str, Any]]] = None
-
-
-class ChatEntryResponse(ChatEntryBase):
-    id: int
-    channel_id: int
-    user_id: Optional[UUID]
-    edited_at: Optional[datetime]
-    edited_by: Optional[UUID]
-    edit_history: Optional[List[Dict[str, Any]]]
-    is_pinned: bool
-    is_deleted: bool
-    deleted_at: Optional[datetime]
-    deleted_by: Optional[UUID]
-    reactions: Optional[Dict[str, List[str]]]
-    created_at: datetime
-
-    class Config:
-        from_attributes = True
-
-
-# ============================================
-# MENTION SCHEMAS
-# ============================================
-
-class MentionResponse(BaseModel):
-    id: int
-    entry_id: int
-    mentioned_user_id: UUID
-    mention_type: str
-    position: Optional[int]
-    is_read: bool
-    read_at: Optional[datetime]
-    created_at: datetime
-
-    class Config:
-        from_attributes = True
-
-
-# ============================================
-# PAGINATION
-# ============================================
-
-class PaginatedResponse(BaseModel):
-    items: List[Any]
-    total: int
-    page: int = 1
-    per_page: int = 100
-    pages: int = 1
-
-
-# ============================================
 # STATS AND ANALYTICS
 # ============================================
 
@@ -349,23 +205,9 @@ class ConversationStats(BaseModel):
     unread_messages: int
 
 
-class ChannelStats(BaseModel):
-    total_channels: int
-    active_channels: int
-    total_members: int
-    total_messages: int
-    active_users_today: int
-
-
 # ============================================
 # WEBHOOK PAYLOADS
 # ============================================
-
-class WebhookPayload(BaseModel):
-    event: str
-    timestamp: datetime
-    data: Dict[str, Any]
-
 
 class IncomingWebhook(BaseModel):
     channel: ChannelTypeEnum
