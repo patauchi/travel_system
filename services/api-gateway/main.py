@@ -42,6 +42,11 @@ security = HTTPBearer(auto_error=False)
 AUTH_SERVICE_URL = os.getenv("AUTH_SERVICE_URL", "http://auth-service:8001")
 TENANT_SERVICE_URL = os.getenv("TENANT_SERVICE_URL", "http://tenant-service:8002")
 BUSINESS_SERVICE_URL = os.getenv("BUSINESS_SERVICE_URL", "http://business-service:8003")
+BOOKING_SERVICE_URL = os.getenv("BOOKING_SERVICE_URL", "http://booking-operations-service:8004")
+COMMUNICATION_SERVICE_URL = os.getenv("COMMUNICATION_SERVICE_URL", "http://communication-service:8005")
+CRM_SERVICE_URL = os.getenv("CRM_SERVICE_URL", "http://crm-service:8006")
+FINANCIAL_SERVICE_URL = os.getenv("FINANCIAL_SERVICE_URL", "http://financial-service:8007")
+SYSTEM_SERVICE_URL = os.getenv("SYSTEM_SERVICE_URL", "http://system-service:8008")
 
 def create_service_token() -> str:
     """Create a token for service-to-service communication"""
@@ -115,12 +120,22 @@ async def root():
             "redoc": "/redoc",
             "auth": "/api/v1/auth",
             "tenants": "/api/v1/tenants",
-            "business": "/api/v1/business"
+            "business": "/api/v1/business",
+            "bookings": "/api/v1/bookings",
+            "communications": "/api/v1/communications",
+            "crm": "/api/v1/crm",
+            "financial": "/api/v1/financial",
+            "system": "/api/v1/system"
         },
         "services": {
             "auth": AUTH_SERVICE_URL,
             "tenant": TENANT_SERVICE_URL,
-            "business": BUSINESS_SERVICE_URL
+            "business": BUSINESS_SERVICE_URL,
+            "booking": BOOKING_SERVICE_URL,
+            "communication": COMMUNICATION_SERVICE_URL,
+            "crm": CRM_SERVICE_URL,
+            "financial": FINANCIAL_SERVICE_URL,
+            "system": SYSTEM_SERVICE_URL
         }
     }
 
@@ -131,6 +146,11 @@ async def health_check():
         check_service_health(AUTH_SERVICE_URL, "auth-service"),
         check_service_health(TENANT_SERVICE_URL, "tenant-service"),
         check_service_health(BUSINESS_SERVICE_URL, "business-service"),
+        check_service_health(BOOKING_SERVICE_URL, "booking-operations-service"),
+        check_service_health(COMMUNICATION_SERVICE_URL, "communication-service"),
+        check_service_health(CRM_SERVICE_URL, "crm-service"),
+        check_service_health(FINANCIAL_SERVICE_URL, "financial-service"),
+        check_service_health(SYSTEM_SERVICE_URL, "system-service"),
         return_exceptions=True
     )
 
@@ -156,6 +176,11 @@ async def services_status():
         check_service_health(AUTH_SERVICE_URL, "auth-service"),
         check_service_health(TENANT_SERVICE_URL, "tenant-service"),
         check_service_health(BUSINESS_SERVICE_URL, "business-service"),
+        check_service_health(BOOKING_SERVICE_URL, "booking-operations-service"),
+        check_service_health(COMMUNICATION_SERVICE_URL, "communication-service"),
+        check_service_health(CRM_SERVICE_URL, "crm-service"),
+        check_service_health(FINANCIAL_SERVICE_URL, "financial-service"),
+        check_service_health(SYSTEM_SERVICE_URL, "system-service"),
         return_exceptions=True
     )
 
@@ -196,6 +221,61 @@ async def proxy_business_base(request: Request):
 async def proxy_business(request: Request, path: str):
     """Proxy requests to business service"""
     return await proxy_request(request, BUSINESS_SERVICE_URL, f"/api/v1/business/{path}")
+
+# Booking Operations Service Routes
+@app.api_route("/api/v1/bookings", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
+async def proxy_bookings_base(request: Request):
+    """Proxy requests to booking operations service base"""
+    return await proxy_request(request, BOOKING_SERVICE_URL, "/api/v1/bookings")
+
+@app.api_route("/api/v1/bookings/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
+async def proxy_bookings(request: Request, path: str):
+    """Proxy requests to booking operations service"""
+    return await proxy_request(request, BOOKING_SERVICE_URL, f"/api/v1/bookings/{path}")
+
+# Communication Service Routes
+@app.api_route("/api/v1/communications", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
+async def proxy_communications_base(request: Request):
+    """Proxy requests to communication service base"""
+    return await proxy_request(request, COMMUNICATION_SERVICE_URL, "/api/v1/communications")
+
+@app.api_route("/api/v1/communications/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
+async def proxy_communications(request: Request, path: str):
+    """Proxy requests to communication service"""
+    return await proxy_request(request, COMMUNICATION_SERVICE_URL, f"/api/v1/communications/{path}")
+
+# CRM Service Routes
+@app.api_route("/api/v1/crm", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
+async def proxy_crm_base(request: Request):
+    """Proxy requests to CRM service base"""
+    return await proxy_request(request, CRM_SERVICE_URL, "/api/v1/crm")
+
+@app.api_route("/api/v1/crm/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
+async def proxy_crm(request: Request, path: str):
+    """Proxy requests to CRM service"""
+    return await proxy_request(request, CRM_SERVICE_URL, f"/api/v1/crm/{path}")
+
+# Financial Service Routes
+@app.api_route("/api/v1/financial", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
+async def proxy_financial_base(request: Request):
+    """Proxy requests to financial service base"""
+    return await proxy_request(request, FINANCIAL_SERVICE_URL, "/api/v1/financial")
+
+@app.api_route("/api/v1/financial/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
+async def proxy_financial(request: Request, path: str):
+    """Proxy requests to financial service"""
+    return await proxy_request(request, FINANCIAL_SERVICE_URL, f"/api/v1/financial/{path}")
+
+# System Service Routes
+@app.api_route("/api/v1/system", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
+async def proxy_system_base(request: Request):
+    """Proxy requests to system service base"""
+    return await proxy_request(request, SYSTEM_SERVICE_URL, "/api/v1/system")
+
+@app.api_route("/api/v1/system/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
+async def proxy_system(request: Request, path: str):
+    """Proxy requests to system service"""
+    return await proxy_request(request, SYSTEM_SERVICE_URL, f"/api/v1/system/{path}")
 
 # Generic proxy function
 async def proxy_request(
@@ -270,7 +350,12 @@ async def catch_all(request: Request, path: str):
             "available_endpoints": [
                 "/api/v1/auth",
                 "/api/v1/tenants",
-                "/api/v1/business"
+                "/api/v1/business",
+                "/api/v1/bookings",
+                "/api/v1/communications",
+                "/api/v1/crm",
+                "/api/v1/financial",
+                "/api/v1/system"
             ],
             "documentation": "/docs"
         }

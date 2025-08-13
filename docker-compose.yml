@@ -72,7 +72,11 @@ services:
       - AUTH_SERVICE_URL=http://auth-service:8001
       - TENANT_SERVICE_URL=http://tenant-service:8002
       - BUSINESS_SERVICE_URL=http://business-service:8003
-      - SYSTEM_SERVICE_URL=http://system-service:8004
+      - BOOKING_SERVICE_URL=http://booking-operations-service:8004
+      - COMMUNICATION_SERVICE_URL=http://communication-service:8005
+      - CRM_SERVICE_URL=http://crm-service:8006
+      - FINANCIAL_SERVICE_URL=http://financial-service:8007
+      - SYSTEM_SERVICE_URL=http://system-service:8008
       - REDIS_URL=redis://redis:6379
     depends_on:
       - redis
@@ -140,7 +144,7 @@ services:
       dockerfile: Dockerfile
     container_name: multitenant-system-service
     ports:
-      - "8004:8004"
+      - "8008:8008"
     environment:
       - ENVIRONMENT=development
       - DATABASE_URL=postgresql://postgres:postgres123@postgres:5432/multitenant_db
@@ -156,7 +160,7 @@ services:
       - multitenant-network
     volumes:
       - ./services/system-service:/app
-    command: uvicorn main:app --host 0.0.0.0 --port 8004 --reload
+    command: uvicorn main:app --host 0.0.0.0 --port 8008 --reload
 
   # Business Service (Example microservice)
   business-service:
@@ -267,12 +271,12 @@ services:
       dockerfile: Dockerfile
     container_name: multitenant-communication-service
     ports:
-      - "8010:8010"
+      - "8005:8005"
     environment:
       - ENVIRONMENT=development
       - DATABASE_URL=postgresql://postgres:postgres123@postgres:5432/multitenant_db
       - REDIS_URL=redis://redis:6379
-      - SERVICE_PORT=8010
+      - SERVICE_PORT=8005
     depends_on:
       - postgres
       - redis
@@ -280,7 +284,7 @@ services:
       - multitenant-network
     volumes:
       - ./services/communication-service:/app
-    command: uvicorn main:app --host 0.0.0.0 --port 8010 --reload
+    command: uvicorn main:app --host 0.0.0.0 --port 8005 --reload
 
   # CRM Service
   crm-service:
@@ -289,7 +293,7 @@ services:
       dockerfile: Dockerfile
     container_name: multitenant-crm-service
     ports:
-      - "8011:8011"
+      - "8006:8006"
     environment:
       - ENVIRONMENT=development
       - DATABASE_URL=postgresql://postgres:postgres123@postgres:5432/multitenant_db
@@ -303,7 +307,7 @@ services:
       - multitenant-network
     volumes:
       - ./services/crm-service:/app
-    command: uvicorn main:app --host 0.0.0.0 --port 8011 --reload
+    command: uvicorn main:app --host 0.0.0.0 --port 8006 --reload
 
   # Financial Service
   financial-service:
@@ -312,7 +316,7 @@ services:
       dockerfile: Dockerfile
     container_name: multitenant-financial-service
     ports:
-      - "8012:8012"
+      - "8007:8007"
     environment:
       - ENVIRONMENT=development
       - DATABASE_URL=postgresql://postgres:postgres123@postgres:5432/multitenant_db
@@ -326,7 +330,7 @@ services:
       - multitenant-network
     volumes:
       - ./services/financial-service:/app
-    command: uvicorn main:app --host 0.0.0.0 --port 8012 --reload
+    command: uvicorn main:app --host 0.0.0.0 --port 8007 --reload
 
   # Booking Operations Service
   booking-operations-service:
@@ -335,7 +339,7 @@ services:
       dockerfile: Dockerfile
     container_name: multitenant-booking-operations-service
     ports:
-      - "8014:8014"
+      - "8004:8004"
     environment:
       - ENVIRONMENT=development
       - DATABASE_URL=postgresql://postgres:postgres123@postgres:5432/multitenant_db
@@ -351,7 +355,7 @@ services:
       - multitenant-network
     volumes:
       - ./services/booking-operations-service:/app
-    command: uvicorn main:app --host 0.0.0.0 --port 8014 --reload
+    command: uvicorn main:app --host 0.0.0.0 --port 8004 --reload
 
   # Nginx Reverse Proxy
   # Flower for Celery monitoring
