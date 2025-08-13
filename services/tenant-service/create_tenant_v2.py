@@ -128,6 +128,21 @@ def initialize_crm_service(tenant_id: str, schema_name: str) -> bool:
         return False
 
 
+def initialize_financial_service(tenant_id: str, schema_name: str) -> bool:
+    """Initialize Financial service for tenant"""
+    try:
+        with httpx.Client() as client:
+            response = client.post(
+                f"http://financial-service:8012/api/v1/tenants/{tenant_id}/initialize",
+                json={"schema_name": schema_name},
+                timeout=30
+            )
+            return response.status_code == 200
+    except Exception as e:
+        logger.error(f"Error initializing financial service: {str(e)}")
+        return False
+
+
 def create_tenant_admin(
     schema_name: str,
     email: str,
@@ -255,7 +270,12 @@ async def create_tenant_v2(
             logger.warning(f"Failed to initialize CRM service for tenant {tenant_id}, but continuing...")
             # Not raising exception as CRM service is optional
 
-        # Step 6: Create admin user in tenant schema
+        # Step 6: Initialize Financial service tables
+        if not initialize_financial_service(tenant_id, schema_name):
+            logger.warning(f"Failed to initialize Financial service for tenant {tenant_id}, but continuing...")
+            # Not raising exception as Financial service is optional
+
+        # Step 7: Create admin user in tenant schema
         from passlib.context import CryptContext
         pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
         password_hash = pwd_context.hash(tenant_data.owner_password)
@@ -272,7 +292,7 @@ async def create_tenant_v2(
         if not admin_user_id:
             raise Exception("Failed to create admin user")
 
-        # Step 7: Create subscription history (without changed_by since user is in tenant schema, not shared)
+        # Step 8: Create subscription history (without changed_by since user is in tenant schema, not shared)
         subscription_history = SubscriptionHistory(
             id=str(uuid.uuid4()),
             tenant_id=tenant_id,

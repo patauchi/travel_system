@@ -305,6 +305,29 @@ services:
       - ./services/crm-service:/app
     command: uvicorn main:app --host 0.0.0.0 --port 8011 --reload
 
+  # Financial Service
+  financial-service:
+    build:
+      context: ./services/financial-service
+      dockerfile: Dockerfile
+    container_name: multitenant-financial-service
+    ports:
+      - "8012:8012"
+    environment:
+      - ENVIRONMENT=development
+      - DATABASE_URL=postgresql://postgres:postgres123@postgres:5432/multitenant_db
+      - REDIS_URL=redis://redis:6379
+      - JWT_SECRET_KEY=your-secret-key-change-in-production
+      - JWT_ALGORITHM=HS256
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - multitenant-network
+    volumes:
+      - ./services/financial-service:/app
+    command: uvicorn main:app --host 0.0.0.0 --port 8012 --reload
+
   # Nginx Reverse Proxy
   # Flower for Celery monitoring
   flower:
