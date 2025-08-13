@@ -17,7 +17,7 @@ import uuid
 from contextlib import asynccontextmanager
 
 from database import get_db, engine, Base
-from models import User, TenantUser, Tenant, AuditLog
+from models import User, Tenant, AuditLog
 from schemas import (
     UserCreate, UserResponse, UserLogin, TokenResponse,
     PasswordReset, PasswordChange, TenantContext,

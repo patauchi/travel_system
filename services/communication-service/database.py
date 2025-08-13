@@ -150,6 +150,48 @@ def list_tenant_schemas() -> list:
         return []
 
 
+def get_db():
+    """
+    Get main database session (shared schema)
+
+    Yields:
+        Session: Database session for shared schema
+    """
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+def get_schema_from_tenant_id(tenant_id: str, db) -> str:
+    """
+    Get schema name from tenant ID
+
+    Args:
+        tenant_id: UUID of the tenant
+        db: Database session
+
+    Returns:
+        str: Schema name or None if not found
+    """
+    try:
+        # Query the shared schema to get tenant info
+        result = db.execute(text("""
+            SELECT schema_name
+            FROM shared.tenants
+            WHERE id = :tenant_id
+        """), {"tenant_id": tenant_id})
+
+        row = result.fetchone()
+        if row:
+            return row[0]
+        return None
+    except Exception as e:
+        logger.error(f"Failed to get schema for tenant {tenant_id}: {str(e)}")
+        return None
+
+
 def schema_exists(schema_name: str) -> bool:
     """
     Check if a schema exists

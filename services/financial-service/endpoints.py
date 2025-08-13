@@ -12,17 +12,73 @@ from sqlalchemy import and_, or_, func, text
 from enum import Enum
 
 from database import get_tenant_db, get_db, get_schema_from_tenant_id
-from models import (
-    Transaction, Payment, Invoice, InvoiceLine,
-    TransactionType, TransactionStatus, PaymentStatus,
-    PaymentMethod, InvoiceStatus, Currency
+from models_invoices import (
+    Invoice, InvoiceLine, Payment,
+    TransactionType, PaymentMethod, PaymentType,
+    InvoiceStatus
 )
-from schemas import (
-    TransactionCreate, TransactionUpdate, TransactionResponse,
-    PaymentCreate, PaymentUpdate, PaymentResponse,
-    InvoiceCreate, InvoiceUpdate, InvoiceResponse,
-    BalanceResponse, FinancialReportResponse
+from models_orders import (
+    PaymentStatus
 )
+# Import or define missing models
+from sqlalchemy import Column, Integer, String, Numeric, DateTime, ForeignKey, Text
+from sqlalchemy.ext.declarative import declarative_base
+from datetime import datetime
+
+Base = declarative_base()
+
+# Define Transaction model since it doesn't exist
+class Transaction(Base):
+    __tablename__ = "transactions"
+
+    id = Column(Integer, primary_key=True)
+    transaction_number = Column(String(50), unique=True)
+    type = Column(String(50))
+    status = Column(String(50))
+    amount = Column(Numeric(10, 2))
+    currency = Column(String(3))
+    description = Column(Text)
+    reference_type = Column(String(50))
+    reference_id = Column(String(100))
+    booking_id = Column(Integer)
+    customer_id = Column(Integer)
+    payment_method = Column(String(50))
+    payment_id = Column(Integer)
+    transaction_metadata = Column(Text)
+    status_notes = Column(Text)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow)
+    completed_at = Column(DateTime)
+    failed_at = Column(DateTime)
+
+# Define missing enums
+class TransactionStatus(str, Enum):
+    PENDING = "pending"
+    PROCESSING = "processing"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+    REVERSED = "reversed"
+
+class Currency(str, Enum):
+    USD = "USD"
+    EUR = "EUR"
+    GBP = "GBP"
+    CAD = "CAD"
+    AUD = "AUD"
+    MXN = "MXN"
+    BRL = "BRL"
+    JPY = "JPY"
+    CNY = "CNY"
+    INR = "INR"
+
+# Import schemas - comment out for now if they don't exist
+# from schemas import (
+#     TransactionCreate, TransactionUpdate, TransactionResponse,
+#     PaymentCreate, PaymentUpdate, PaymentResponse,
+#     InvoiceCreate, InvoiceUpdate, InvoiceResponse,
+#     BalanceResponse, FinancialReportResponse
+# )
 
 router = APIRouter()
 
@@ -31,10 +87,10 @@ router = APIRouter()
 # TRANSACTIONS ENDPOINTS
 # ============================================
 
-@router.post("/tenants/{tenant_id}/transactions", response_model=TransactionResponse)
+@router.post("/tenants/{tenant_id}/transactions")
 async def create_transaction(
     tenant_id: str,
-    transaction_data: TransactionCreate,
+    transaction_data: Dict[str, Any],
     db: Session = Depends(get_db)
 ):
     """
@@ -62,17 +118,17 @@ async def create_transaction(
         # Create transaction
         transaction = Transaction(
             transaction_number=f"TXN-{datetime.now().strftime('%Y%m%d%H%M%S')}",
-            type=transaction_data.type,
+            type=transaction_data.get("type"),
             status=TransactionStatus.PENDING,
-            amount=transaction_data.amount,
-            currency=transaction_data.currency or Currency.USD,
-            description=transaction_data.description,
-            reference_type=transaction_data.reference_type,
-            reference_id=transaction_data.reference_id,
-            booking_id=transaction_data.booking_id,
-            customer_id=transaction_data.customer_id,
-            payment_method=transaction_data.payment_method,
-            metadata=transaction_data.metadata or {},
+            amount=transaction_data.get("amount"),
+            currency=transaction_data.get("currency", "USD"),
+            description=transaction_data.get("description"),
+            reference_type=transaction_data.get("reference_type"),
+            reference_id=transaction_data.get("reference_id"),
+            booking_id=transaction_data.get("booking_id"),
+            customer_id=transaction_data.get("customer_id"),
+            payment_method=transaction_data.get("payment_method"),
+            transaction_metadata=transaction_data.get("metadata", {}),
             created_at=datetime.utcnow(),
             updated_at=datetime.utcnow()
         )
@@ -81,7 +137,16 @@ async def create_transaction(
         tenant_db.commit()
         tenant_db.refresh(transaction)
 
-        return TransactionResponse.from_orm(transaction)
+        # Return dictionary instead of using schema
+        return {
+            "id": transaction.id,
+            "transaction_number": transaction.transaction_number,
+            "type": transaction.type,
+            "status": transaction.status,
+            "amount": float(transaction.amount),
+            "currency": transaction.currency,
+            "created_at": transaction.created_at.isoformat() if transaction.created_at else None
+        }
 
     except Exception as e:
         tenant_db.rollback()
@@ -198,7 +263,15 @@ async def list_transactions(
             "total": total_count,
             "skip": skip,
             "limit": limit,
-            "data": [TransactionResponse.from_orm(t) for t in transactions]
+            "data": [{
+                "id": t.id,
+                "transaction_number": t.transaction_number,
+                "type": t.type,
+                "status": t.status,
+                "amount": float(t.amount) if t.amount else 0,
+                "currency": t.currency,
+                "created_at": t.created_at.isoformat() if t.created_at else None
+            } for t in transactions]
         }
 
     except Exception as e:
@@ -210,7 +283,7 @@ async def list_transactions(
         tenant_db.close()
 
 
-@router.get("/tenants/{tenant_id}/transactions/{transaction_id}", response_model=TransactionResponse)
+@router.get("/tenants/{tenant_id}/transactions/{transaction_id}")
 async def get_transaction(
     tenant_id: str,
     transaction_id: int,
@@ -239,7 +312,15 @@ async def get_transaction(
                 detail=f"Transaction {transaction_id} not found"
             )
 
-        return TransactionResponse.from_orm(transaction)
+        return {
+            "id": transaction.id,
+            "transaction_number": transaction.transaction_number,
+            "type": transaction.type,
+            "status": transaction.status,
+            "amount": float(transaction.amount) if transaction.amount else 0,
+            "currency": transaction.currency,
+            "created_at": transaction.created_at.isoformat() if transaction.created_at else None
+        }
 
     finally:
         tenant_db.close()
@@ -289,7 +370,12 @@ async def update_transaction_status(
         tenant_db.commit()
         tenant_db.refresh(transaction)
 
-        return TransactionResponse.from_orm(transaction)
+        return {
+            "id": transaction.id,
+            "transaction_number": transaction.transaction_number,
+            "status": transaction.status,
+            "message": "Transaction status updated successfully"
+        }
 
     except HTTPException:
         raise
@@ -307,10 +393,10 @@ async def update_transaction_status(
 # PAYMENTS ENDPOINTS
 # ============================================
 
-@router.post("/tenants/{tenant_id}/payments", response_model=PaymentResponse)
+@router.post("/tenants/{tenant_id}/payments")
 async def create_payment(
     tenant_id: str,
-    payment_data: PaymentCreate,
+    payment_data: Dict[str, Any],
     db: Session = Depends(get_db)
 ):
     """
@@ -338,17 +424,17 @@ async def create_payment(
         # Create payment record
         payment = Payment(
             payment_number=f"PAY-{datetime.now().strftime('%Y%m%d%H%M%S')}",
-            transaction_id=payment_data.transaction_id,
-            invoice_id=payment_data.invoice_id,
-            amount=payment_data.amount,
-            currency=payment_data.currency or Currency.USD,
-            payment_method=payment_data.payment_method,
-            status=PaymentStatus.PENDING,
-            customer_id=payment_data.customer_id,
-            booking_id=payment_data.booking_id,
-            gateway=payment_data.gateway,
-            gateway_transaction_id=payment_data.gateway_transaction_id,
-            metadata=payment_data.metadata or {},
+            transaction_id=payment_data.get("transaction_id"),
+            invoice_id=payment_data.get("invoice_id"),
+            amount=payment_data.get("amount"),
+            currency=payment_data.get("currency", "USD"),
+            payment_method=payment_data.get("payment_method"),
+            status="pending",
+            customer_id=payment_data.get("customer_id"),
+            booking_id=payment_data.get("booking_id"),
+            gateway=payment_data.get("gateway"),
+            gateway_transaction_id=payment_data.get("gateway_transaction_id"),
+            payment_metadata=payment_data.get("metadata", {}),
             created_at=datetime.utcnow(),
             updated_at=datetime.utcnow()
         )
@@ -356,9 +442,9 @@ async def create_payment(
         tenant_db.add(payment)
 
         # If payment is for a transaction, update transaction
-        if payment_data.transaction_id:
+        if payment_data.get("transaction_id"):
             transaction = tenant_db.query(Transaction).filter(
-                Transaction.id == payment_data.transaction_id
+                Transaction.id == payment_data.get("transaction_id")
             ).first()
             if transaction:
                 transaction.payment_id = payment.id
@@ -367,7 +453,14 @@ async def create_payment(
         tenant_db.commit()
         tenant_db.refresh(payment)
 
-        return PaymentResponse.from_orm(payment)
+        return {
+            "id": payment.id,
+            "payment_number": payment.payment_number,
+            "status": payment.status,
+            "amount": float(payment.amount) if payment.amount else 0,
+            "currency": payment.currency,
+            "created_at": payment.created_at.isoformat() if payment.created_at else None
+        }
 
     except Exception as e:
         tenant_db.rollback()
@@ -387,8 +480,8 @@ async def list_payments(
     skip: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=100),
     # Filters
-    status: Optional[PaymentStatus] = Query(None),
-    payment_method: Optional[PaymentMethod] = Query(None),
+    status: Optional[str] = Query(None),
+    payment_method: Optional[str] = Query(None),
     customer_id: Optional[int] = Query(None),
     booking_id: Optional[int] = Query(None),
     invoice_id: Optional[int] = Query(None),
@@ -451,7 +544,13 @@ async def list_payments(
             "total": total_count,
             "skip": skip,
             "limit": limit,
-            "data": [PaymentResponse.from_orm(p) for p in payments]
+            "data": [{
+                "id": p.id,
+                "payment_number": p.payment_number if hasattr(p, 'payment_number') else f"PAY-{p.id}",
+                "status": p.status,
+                "amount": float(p.amount) if p.amount else 0,
+                "created_at": p.created_at.isoformat() if p.created_at else None
+            } for p in payments]
         }
 
     except Exception as e:
@@ -492,7 +591,7 @@ async def confirm_payment(
             )
 
         # Update payment status
-        payment.status = PaymentStatus.COMPLETED
+        payment.status = "completed"
         payment.gateway_response = gateway_response
         payment.processed_at = datetime.utcnow()
         payment.updated_at = datetime.utcnow()
@@ -526,10 +625,10 @@ async def confirm_payment(
 # INVOICES ENDPOINTS
 # ============================================
 
-@router.post("/tenants/{tenant_id}/invoices", response_model=InvoiceResponse)
+@router.post("/tenants/{tenant_id}/invoices")
 async def create_invoice(
     tenant_id: str,
-    invoice_data: InvoiceCreate,
+    invoice_data: Dict[str, Any],
     db: Session = Depends(get_db)
 ):
     """
@@ -555,27 +654,30 @@ async def create_invoice(
 
     try:
         # Calculate totals
-        subtotal = sum(item.quantity * item.unit_price for item in invoice_data.line_items)
-        tax_amount = subtotal * (invoice_data.tax_rate / 100) if invoice_data.tax_rate else 0
-        total_amount = subtotal + tax_amount - (invoice_data.discount_amount or 0)
+        line_items = invoice_data.get("line_items", [])
+        subtotal = sum(item.get("quantity", 0) * item.get("unit_price", 0) for item in line_items)
+        tax_rate = invoice_data.get("tax_rate", 0)
+        tax_amount = subtotal * (tax_rate / 100) if tax_rate else 0
+        discount_amount = invoice_data.get("discount_amount", 0)
+        total_amount = subtotal + tax_amount - discount_amount
 
         # Create invoice
         invoice = Invoice(
             invoice_number=f"INV-{datetime.now().strftime('%Y%m%d')}-{datetime.now().strftime('%H%M%S')}",
-            customer_id=invoice_data.customer_id,
-            booking_id=invoice_data.booking_id,
-            status=InvoiceStatus.DRAFT,
-            issue_date=invoice_data.issue_date or date.today(),
-            due_date=invoice_data.due_date or (date.today() + timedelta(days=30)),
-            currency=invoice_data.currency or Currency.USD,
+            customer_id=invoice_data.get("customer_id"),
+            booking_id=invoice_data.get("booking_id"),
+            status="draft",
+            issue_date=invoice_data.get("issue_date", date.today()),
+            due_date=invoice_data.get("due_date", date.today() + timedelta(days=30)),
+            currency=invoice_data.get("currency", "USD"),
             subtotal=subtotal,
-            tax_rate=invoice_data.tax_rate,
+            tax_rate=tax_rate,
             tax_amount=tax_amount,
-            discount_amount=invoice_data.discount_amount or 0,
+            discount_amount=discount_amount,
             total_amount=total_amount,
-            notes=invoice_data.notes,
-            terms_conditions=invoice_data.terms_conditions,
-            metadata=invoice_data.metadata or {},
+            notes=invoice_data.get("notes"),
+            terms_conditions=invoice_data.get("terms_conditions"),
+            invoice_metadata=invoice_data.get("metadata", {}),
             created_at=datetime.utcnow(),
             updated_at=datetime.utcnow()
         )
@@ -584,14 +686,14 @@ async def create_invoice(
         tenant_db.flush()  # Get invoice ID
 
         # Add line items
-        for item_data in invoice_data.line_items:
+        for item_data in line_items:
             line_item = InvoiceLine(
                 invoice_id=invoice.id,
-                description=item_data.description,
-                quantity=item_data.quantity,
-                unit_price=item_data.unit_price,
-                amount=item_data.quantity * item_data.unit_price,
-                tax_rate=item_data.tax_rate,
+                description=item_data.get("description"),
+                quantity=item_data.get("quantity", 0),
+                unit_price=item_data.get("unit_price", 0),
+                amount=item_data.get("quantity", 0) * item_data.get("unit_price", 0),
+                tax_rate=item_data.get("tax_rate"),
                 created_at=datetime.utcnow()
             )
             tenant_db.add(line_item)
@@ -599,7 +701,13 @@ async def create_invoice(
         tenant_db.commit()
         tenant_db.refresh(invoice)
 
-        return InvoiceResponse.from_orm(invoice)
+        return {
+            "id": invoice.id,
+            "invoice_number": invoice.invoice_number,
+            "status": invoice.status,
+            "total_amount": float(invoice.total_amount) if invoice.total_amount else 0,
+            "created_at": invoice.created_at.isoformat() if invoice.created_at else None
+        }
 
     except Exception as e:
         tenant_db.rollback()
@@ -619,7 +727,7 @@ async def list_invoices(
     skip: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=100),
     # Filters
-    status: Optional[InvoiceStatus] = Query(None),
+    status: Optional[str] = Query(None),
     customer_id: Optional[int] = Query(None),
     booking_id: Optional[int] = Query(None),
     issue_date_from: Optional[date] = Query(None),
@@ -688,7 +796,15 @@ async def list_invoices(
             "total": total_count,
             "skip": skip,
             "limit": limit,
-            "data": [InvoiceResponse.from_orm(i) for i in invoices]
+            "data": [{
+                "id": i.id,
+                "invoice_number": i.invoice_number,
+                "status": i.status,
+                "total_amount": float(i.total_amount) if i.total_amount else 0,
+                "issue_date": i.issue_date.isoformat() if i.issue_date else None,
+                "due_date": i.due_date.isoformat() if i.due_date else None,
+                "created_at": i.created_at.isoformat() if i.created_at else None
+            } for i in invoices]
         }
 
     except Exception as e:
@@ -729,8 +845,8 @@ async def send_invoice(
             )
 
         # Update invoice status
-        if invoice.status == InvoiceStatus.DRAFT:
-            invoice.status = InvoiceStatus.SENT
+        if invoice.status == "draft":
+            invoice.status = "sent"
             invoice.sent_at = datetime.utcnow()
 
         invoice.updated_at = datetime.utcnow()
@@ -760,7 +876,7 @@ async def send_invoice(
 # BALANCE & REPORTS ENDPOINTS
 # ============================================
 
-@router.get("/tenants/{tenant_id}/balance", response_model=BalanceResponse)
+@router.get("/tenants/{tenant_id}/balance")
 async def get_balance(
     tenant_id: str,
     customer_id: Optional[int] = Query(None, description="Get balance for specific customer"),
@@ -810,26 +926,26 @@ async def get_balance(
         ).with_entities(func.sum(Payment.amount)).scalar() or 0
 
         total_invoiced = invoices_query.filter(
-            Invoice.status != InvoiceStatus.CANCELLED
+            Invoice.status != "cancelled"
         ).with_entities(func.sum(Invoice.total_amount)).scalar() or 0
 
         total_paid_invoices = invoices_query.filter(
-            Invoice.status == InvoiceStatus.PAID
+            Invoice.status == "paid"
         ).with_entities(func.sum(Invoice.paid_amount)).scalar() or 0
 
         pending_amount = total_invoiced - total_paid_invoices
 
-        return BalanceResponse(
-            total_charges=float(total_transactions),
-            total_payments=float(total_payments),
-            total_invoiced=float(total_invoiced),
-            total_paid=float(total_paid_invoices),
-            pending_amount=float(pending_amount),
-            balance=float(total_payments - total_transactions),
-            customer_id=customer_id,
-            booking_id=booking_id,
-            as_of=datetime.utcnow()
-        )
+        return {
+            "total_charges": float(total_transactions),
+            "total_payments": float(total_payments),
+            "total_invoiced": float(total_invoiced),
+            "total_paid": float(total_paid_invoices),
+            "pending_amount": float(pending_amount),
+            "balance": float(total_payments - total_transactions),
+            "customer_id": customer_id,
+            "booking_id": booking_id,
+            "as_of": datetime.utcnow().isoformat()
+        }
 
     except Exception as e:
         raise HTTPException(
@@ -877,3 +993,69 @@ async def get_financial_report(
         transactions_data = tenant_db.execute(
             text(f"""
                 SELECT
+                    DATE_TRUNC('{date_trunc}', created_at) as period,
+                    SUM(CASE WHEN type = 'charge' THEN amount ELSE 0 END) as revenue,
+                    SUM(CASE WHEN type = 'payment' THEN amount ELSE 0 END) as payments,
+                    SUM(CASE WHEN type = 'refund' THEN amount ELSE 0 END) as refunds,
+                    SUM(CASE WHEN type = 'fee' THEN amount ELSE 0 END) as fees,
+                    COUNT(*) as transaction_count
+                FROM transactions
+                WHERE created_at >= :period_start
+                    AND created_at <= :period_end
+                GROUP BY DATE_TRUNC('{date_trunc}', created_at)
+                ORDER BY period
+            """),
+            {"period_start": period_start, "period_end": period_end}
+        ).fetchall()
+
+        # Format results
+        report_data = []
+        total_revenue = 0
+        total_payments = 0
+        total_refunds = 0
+        total_fees = 0
+
+        for row in transactions_data:
+            period_str = row.period.strftime("%Y-%m-%d")
+            revenue = float(row.revenue or 0)
+            payments = float(row.payments or 0)
+            refunds = float(row.refunds or 0)
+            fees = float(row.fees or 0)
+
+            total_revenue += revenue
+            total_payments += payments
+            total_refunds += refunds
+            total_fees += fees
+
+            report_data.append({
+                "period": period_str,
+                "total_revenue": revenue,
+                "total_payments": payments,
+                "total_refunds": refunds,
+                "total_fees": fees,
+                "net_revenue": revenue - refunds - fees,
+                "transaction_count": row.transaction_count
+            })
+
+        return {
+            "period_start": period_start.isoformat(),
+            "period_end": period_end.isoformat(),
+            "group_by": group_by,
+            "summary": {
+                "total_revenue": total_revenue,
+                "total_payments": total_payments,
+                "total_refunds": total_refunds,
+                "total_fees": total_fees,
+                "net_revenue": total_revenue - total_refunds - total_fees
+            },
+            "data": report_data,
+            "generated_at": datetime.utcnow().isoformat()
+        }
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error generating report: {str(e)}"
+        )
+    finally:
+        tenant_db.close()

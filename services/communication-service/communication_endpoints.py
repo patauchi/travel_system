@@ -117,7 +117,7 @@ class SMSRequest(BaseModel):
 class WhatsAppRequest(BaseModel):
     """WhatsApp message request"""
     to: str = Field(..., description="Phone number in E.164 format")
-    message_type: str = Field("text", regex="^(text|template|media|location|contact)$")
+    message_type: str = Field("text", pattern="^(text|template|media|location|contact)$")
     text: Optional[str] = Field(None, max_length=4096)
     template_name: Optional[str] = None
     template_language: Optional[str] = Field("en", max_length=5)
@@ -536,7 +536,7 @@ async def get_communication_history(
     skip: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=100),
     sort_by: str = Query("created_at"),
-    sort_order: str = Query("desc", regex="^(asc|desc)$")
+    sort_order: str = Query("desc", pattern="^(asc|desc)$")
 ):
     """
     Get communication history with filtering
@@ -662,7 +662,7 @@ async def get_communication_statistics(
     db: Session = Depends(get_db),
     date_from: Optional[date] = Query(None),
     date_to: Optional[date] = Query(None),
-    group_by: str = Query("day", regex="^(day|week|month)$")
+    group_by: str = Query("day", pattern="^(day|week|month)$")
 ):
     """
     Get communication statistics and analytics

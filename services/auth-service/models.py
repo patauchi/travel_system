@@ -48,7 +48,7 @@ class User(Base):
     updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Relationships
-    tenant_associations = relationship("TenantUser", foreign_keys="TenantUser.user_id", back_populates="user", cascade="all, delete-orphan")
+    # tenant_associations = relationship("TenantUser", foreign_keys="TenantUser.user_id", back_populates="user", cascade="all, delete-orphan")
     audit_logs = relationship("AuditLog", foreign_keys="AuditLog.user_id", back_populates="user")
     api_keys_created = relationship("ApiKey", foreign_keys="ApiKey.created_by_id", back_populates="created_by")
 
@@ -93,7 +93,7 @@ class Tenant(Base):
     subscription_ends_at = Column(DateTime(timezone=True))
 
     # Relationships
-    users = relationship("TenantUser", back_populates="tenant", cascade="all, delete-orphan")
+    # users = relationship("TenantUser", back_populates="tenant", cascade="all, delete-orphan")
     api_keys = relationship("ApiKey", back_populates="tenant", cascade="all, delete-orphan")
     audit_logs = relationship("AuditLog", back_populates="tenant")
     feature_flags = relationship("TenantFeature", back_populates="tenant", cascade="all, delete-orphan")

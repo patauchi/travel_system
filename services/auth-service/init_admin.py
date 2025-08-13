@@ -15,7 +15,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from passlib.context import CryptContext
 from database import Base, engine, SessionLocal
-from models import User, TenantUser
+from models import User
 
 # Password context
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
