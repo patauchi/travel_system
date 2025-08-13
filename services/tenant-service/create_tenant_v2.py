@@ -143,6 +143,21 @@ def initialize_financial_service(tenant_id: str, schema_name: str) -> bool:
         return False
 
 
+def initialize_booking_operations_service(tenant_id: str, schema_name: str) -> bool:
+    """Initialize Booking Operations service for tenant"""
+    try:
+        with httpx.Client() as client:
+            response = client.post(
+                f"http://booking-operations-service:8014/api/v1/tenants/{tenant_id}/initialize",
+                json={"schema_name": schema_name},
+                timeout=30
+            )
+            return response.status_code == 200
+    except Exception as e:
+        logger.error(f"Error initializing booking operations service: {str(e)}")
+        return False
+
+
 def create_tenant_admin(
     schema_name: str,
     email: str,
@@ -275,7 +290,12 @@ async def create_tenant_v2(
             logger.warning(f"Failed to initialize Financial service for tenant {tenant_id}, but continuing...")
             # Not raising exception as Financial service is optional
 
-        # Step 7: Create admin user in tenant schema
+        # Step 7: Initialize Booking Operations service tables
+        if not initialize_booking_operations_service(tenant_id, schema_name):
+            logger.warning(f"Failed to initialize Booking Operations service for tenant {tenant_id}, but continuing...")
+            # Not raising exception as Booking Operations service is optional
+
+        # Step 8: Create admin user in tenant schema
         from passlib.context import CryptContext
         pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
         password_hash = pwd_context.hash(tenant_data.owner_password)
@@ -292,7 +312,7 @@ async def create_tenant_v2(
         if not admin_user_id:
             raise Exception("Failed to create admin user")
 
-        # Step 8: Create subscription history (without changed_by since user is in tenant schema, not shared)
+        # Step 9: Create subscription history (without changed_by since user is in tenant schema, not shared)
         subscription_history = SubscriptionHistory(
             id=str(uuid.uuid4()),
             tenant_id=tenant_id,

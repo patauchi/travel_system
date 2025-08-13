@@ -328,6 +328,31 @@ services:
       - ./services/financial-service:/app
     command: uvicorn main:app --host 0.0.0.0 --port 8012 --reload
 
+  # Booking Operations Service
+  booking-operations-service:
+    build:
+      context: ./services/booking-operations-service
+      dockerfile: Dockerfile
+    container_name: multitenant-booking-operations-service
+    ports:
+      - "8014:8014"
+    environment:
+      - ENVIRONMENT=development
+      - DATABASE_URL=postgresql://postgres:postgres123@postgres:5432/multitenant_db
+      - REDIS_URL=redis://redis:6379
+      - JWT_SECRET_KEY=your-secret-key-change-in-production
+      - JWT_ALGORITHM=HS256
+    depends_on:
+      - postgres
+      - redis
+      - financial-service
+      - crm-service
+    networks:
+      - multitenant-network
+    volumes:
+      - ./services/booking-operations-service:/app
+    command: uvicorn main:app --host 0.0.0.0 --port 8014 --reload
+
   # Nginx Reverse Proxy
   # Flower for Celery monitoring
   flower:
