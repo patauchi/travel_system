@@ -22,6 +22,7 @@ from models import Tenant, TenantUser, User, SubscriptionHistory, TenantFeature,
 from auth_middleware import verify_token, get_current_user, require_super_admin, require_tenant_admin
 from tasks import provision_tenant_resources, cleanup_tenant_resources
 from create_tenant_v2 import TenantCreateV2, create_tenant_v2, initialize_tenant_schema
+import httpx
 
 # Redis client
 redis_client = redis.Redis(
@@ -251,6 +252,21 @@ async def create_tenant(
         if not initialize_tenant_schema(tenant_id, schema_name):
             logger.warning(f"Failed to initialize schema with system-service for tenant {tenant_id}")
             # Continue anyway as the schema was created
+
+        # Initialize communication-service tables
+        try:
+            with httpx.Client() as client:
+                response = client.post(
+                    f"http://communication-service:8010/api/v1/tenants/{tenant_id}/initialize",
+                    json={"schema_name": schema_name},
+                    timeout=30
+                )
+                if response.status_code == 200:
+                    logger.info(f"Successfully initialized communication-service for tenant {tenant_id}")
+                else:
+                    logger.warning(f"Failed to initialize communication-service for tenant {tenant_id}: {response.text}")
+        except Exception as e:
+            logger.warning(f"Error calling communication-service for tenant {tenant_id}: {str(e)}")
 
         # Save user
         db.add(owner_user)
