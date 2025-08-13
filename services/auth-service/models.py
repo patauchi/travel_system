@@ -10,8 +10,6 @@ import uuid
 class UserRole(str, enum.Enum):
     super_admin = "super_admin"
     tenant_admin = "tenant_admin"
-    tenant_user = "tenant_user"
-    tenant_viewer = "tenant_viewer"
 
 class TenantStatus(str, enum.Enum):
     active = "active"
@@ -120,30 +118,6 @@ class Tenant(Base):
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "trial_ends_at": self.trial_ends_at.isoformat() if self.trial_ends_at else None
         }
-
-class TenantUser(Base):
-    __tablename__ = "tenant_users"
-    __table_args__ = {"schema": "shared"}
-
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    tenant_id = Column(UUID(as_uuid=True), ForeignKey("shared.tenants.id", ondelete="CASCADE"), nullable=False)
-    user_id = Column(UUID(as_uuid=True), ForeignKey("shared.users.id", ondelete="CASCADE"), nullable=False)
-    role = Column(SQLEnum(UserRole), default=UserRole.tenant_user)
-    is_owner = Column(Boolean, default=False)
-    permissions = Column(JSONB, default={})
-    joined_at = Column(DateTime(timezone=True), default=datetime.utcnow)
-    invited_by = Column(UUID(as_uuid=True), ForeignKey("shared.users.id"))
-    invitation_token = Column(String(255))
-    invitation_accepted_at = Column(DateTime(timezone=True))
-    last_active_at = Column(DateTime(timezone=True))
-
-    # Relationships
-    tenant = relationship("Tenant", back_populates="users")
-    user = relationship("User", foreign_keys=[user_id], back_populates="tenant_associations")
-    inviter = relationship("User", foreign_keys=[invited_by])
-
-    def __repr__(self):
-        return f"<TenantUser {self.user_id} in {self.tenant_id}>"
 
 class ApiKey(Base):
     __tablename__ = "api_keys"
