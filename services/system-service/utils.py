@@ -448,6 +448,56 @@ def sanitize_filename(filename: str) -> str:
     # Remove or replace problematic characters
     filename = re.sub(r'[^\w\s.-]', '', filename)
 
+    return filename
+
+
+def verify_tenant_access(tenant_slug: str, current_user: dict) -> bool:
+    """
+    Verify that the current user has access to the specified tenant
+
+    Args:
+        tenant_slug: The tenant slug to verify access for
+        current_user: The current user's information from JWT
+
+    Returns:
+        True if user has access
+
+    Raises:
+        HTTPException if user doesn't have access
+    """
+    # For now, we'll just check if the user belongs to the tenant
+    # In a real implementation, this would check the database
+    user_tenant = current_user.get("tenant_slug")
+
+    if user_tenant != tenant_slug and current_user.get("role") != "super_admin":
+        from fastapi import HTTPException
+        raise HTTPException(
+            status_code=403,
+            detail="You don't have access to this tenant"
+        )
+
+    return True
+
+
+def get_current_user(request: Any) -> dict:
+    """
+    Get the current user from the request
+    This is a placeholder that should be replaced with actual JWT validation
+
+    Args:
+        request: The FastAPI request object
+
+    Returns:
+        Dictionary with user information
+    """
+    # This is a simplified version - in production, extract from JWT token
+    return {
+        "user_id": str(uuid.uuid4()),
+        "email": "user@example.com",
+        "tenant_slug": "default",
+        "role": "tenant_user"
+    }
+
     # Limit length
     max_length = 255
     if len(filename) > max_length:

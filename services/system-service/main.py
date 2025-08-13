@@ -38,6 +38,7 @@ from utils import (
     check_user_permission, log_audit
 )
 from schema_manager import SchemaManager
+from extended_endpoints import include_extended_routers
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -93,6 +94,9 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan
 )
+
+# Include extended endpoints for notes, tasks, events, etc.
+include_extended_routers(app)
 
 # CORS middleware
 app.add_middleware(
