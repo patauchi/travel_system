@@ -17,6 +17,7 @@ import uvicorn
 from database import get_db, get_tenant_db, cleanup_engines, get_schema_from_tenant_id
 from schema_manager import SchemaManager
 from sqlalchemy.orm import Session
+from endpoints_bookings import router as bookings_router
 
 # Configure logging
 logging.basicConfig(
@@ -75,6 +76,13 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+)
+
+# Include routers
+app.include_router(
+    bookings_router,
+    prefix="/api/v1",
+    tags=["bookings"]
 )
 
 

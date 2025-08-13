@@ -17,6 +17,10 @@ import uvicorn
 from database import get_db, get_tenant_db, cleanup_engines, get_schema_from_tenant_id
 from schema_manager import SchemaManager
 from sqlalchemy.orm import Session
+from endpoints_leads import router as leads_router
+from endpoints_contacts import router as contacts_router
+from endpoints_accounts import router as accounts_router
+from endpoints_opportunities import router as opportunities_router
 
 # Configure logging
 logging.basicConfig(
@@ -76,6 +80,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Include routers
+app.include_router(leads_router, prefix="/api/v1", tags=["leads"])
+app.include_router(contacts_router, prefix="/api/v1", tags=["contacts"])
+app.include_router(accounts_router, prefix="/api/v1", tags=["accounts"])
+app.include_router(opportunities_router, prefix="/api/v1", tags=["opportunities"])
 
 
 # ============================================

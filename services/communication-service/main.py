@@ -15,6 +15,7 @@ from datetime import datetime
 from database import verify_connection, cleanup_engines
 from schema_manager import SchemaManager
 from endpoints import include_routers
+from communication_endpoints import router as communication_router
 
 # Configure logging
 logging.basicConfig(
@@ -69,6 +70,13 @@ app.add_middleware(
 
 # Include API routers
 include_routers(app)
+
+# Include communication endpoints router
+app.include_router(
+    communication_router,
+    prefix="/api/v1",
+    tags=["communications"]
+)
 
 
 # ============================================

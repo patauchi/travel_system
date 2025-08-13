@@ -101,6 +101,595 @@ async def create_booking(
 async def list_bookings(
     tenant_id: str,
     db: Session = Depends(get_db),
+    # Pagination
+    skip: int = Query(0, ge=0, description="Number of records to skip"),
+    limit: int = Query(20, ge=1, le=100, description="Number of records to return"),
+    # Filters
+    status: Optional[BookingOverallStatus] = Query(None, description="Filter by booking status"),
+    booking_number: Optional[str] = Query(None, description="Filter by booking number"),
+    order_id: Optional[int] = Query(None, description="Filter by order ID"),
+    customer_name: Optional[str] = Query(None, description="Search by customer name"),
+    travel_date_from: Optional[date] = Query(None, description="Travel start date from"),
+    travel_date_to: Optional[date] = Query(None, description="Travel start date to"),
+    created_from: Optional[datetime] = Query(None, description="Created date from"),
+    created_to: Optional[datetime] = Query(None, description="Created date to"),
+    min_amount: Optional[float] = Query(None, description="Minimum total amount"),
+    max_amount: Optional[float] = Query(None, description="Maximum total amount"),
+    # Sorting
+    sort_by: str = Query("created_at", description="Sort by field"),
+    sort_order: str = Query("desc", regex="^(asc|desc)$", description="Sort order")
+):
+    """
+    List bookings with advanced filtering, pagination and sorting
+
+    Args:
+        tenant_id: UUID of the tenant
+        skip: Number of records to skip (pagination)
+        limit: Maximum number of records to return
+        Various filter parameters
+
+    Returns:
+        List of bookings matching the criteria
+    """
+    # Get tenant schema
+    schema_name = get_schema_from_tenant_id(tenant_id, db)
+    if not schema_name:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Tenant {tenant_id} not found"
+        )
+
+    # Get tenant database session
+    tenant_db = next(get_tenant_db(schema_name))
+
+    try:
+        # Build query
+        query = tenant_db.query(Booking)
+
+        # Apply filters
+        if status:
+            query = query.filter(Booking.overall_status == status)
+
+        if booking_number:
+            query = query.filter(Booking.booking_number.ilike(f"%{booking_number}%"))
+
+        if order_id:
+            query = query.filter(Booking.order_id == order_id)
+
+        if customer_name:
+            query = query.filter(
+                or_(
+                    Booking.primary_contact_name.ilike(f"%{customer_name}%"),
+                    Booking.booking_number.ilike(f"%{customer_name}%")
+                )
+            )
+
+        if travel_date_from:
+            query = query.filter(Booking.travel_start_date >= travel_date_from)
+
+        if travel_date_to:
+            query = query.filter(Booking.travel_start_date <= travel_date_to)
+
+        if created_from:
+            query = query.filter(Booking.created_at >= created_from)
+
+        if created_to:
+            query = query.filter(Booking.created_at <= created_to)
+
+        if min_amount is not None:
+            query = query.filter(Booking.total_amount >= min_amount)
+
+        if max_amount is not None:
+            query = query.filter(Booking.total_amount <= max_amount)
+
+        # Get total count before pagination
+        total_count = query.count()
+
+        # Apply sorting
+        if hasattr(Booking, sort_by):
+            order_column = getattr(Booking, sort_by)
+            if sort_order == "desc":
+                query = query.order_by(order_column.desc())
+            else:
+                query = query.order_by(order_column.asc())
+        else:
+            query = query.order_by(Booking.created_at.desc())
+
+        # Apply pagination
+        bookings = query.offset(skip).limit(limit).all()
+
+        # Format response
+        results = []
+        for booking in bookings:
+            results.append({
+                "id": booking.id,
+                "booking_number": booking.booking_number,
+                "order_id": booking.order_id,
+                "overall_status": booking.overall_status.value if booking.overall_status else None,
+                "travel_start_date": booking.travel_start_date.isoformat() if booking.travel_start_date else None,
+                "travel_end_date": booking.travel_end_date.isoformat() if booking.travel_end_date else None,
+                "total_passengers": booking.total_passengers,
+                "adults_count": booking.adults_count,
+                "children_count": booking.children_count,
+                "infants_count": booking.infants_count,
+                "total_services": booking.total_services,
+                "confirmed_services": booking.confirmed_services,
+                "pending_services": booking.pending_services,
+                "total_amount": float(booking.total_amount) if booking.total_amount else 0,
+                "currency": booking.currency,
+                "primary_contact_name": booking.primary_contact_name,
+                "created_at": booking.created_at.isoformat() if booking.created_at else None,
+                "updated_at": booking.updated_at.isoformat() if booking.updated_at else None
+            })
+
+        return {
+            "total": total_count,
+            "skip": skip,
+            "limit": limit,
+            "data": results
+        }
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error fetching bookings: {str(e)}"
+        )
+    finally:
+        tenant_db.close()
+
+
+@router.get("/tenants/{tenant_id}/bookings/{booking_id}")
+async def get_booking(
+    tenant_id: str,
+    booking_id: int = Path(..., description="Booking ID"),
+    db: Session = Depends(get_db),
+    include_lines: bool = Query(True, description="Include booking lines"),
+    include_passengers: bool = Query(True, description="Include passenger details")
+):
+    """
+    Get detailed information about a specific booking
+
+    Args:
+        tenant_id: UUID of the tenant
+        booking_id: ID of the booking
+        include_lines: Whether to include booking lines
+        include_passengers: Whether to include passenger information
+
+    Returns:
+        Detailed booking information
+    """
+    # Get tenant schema
+    schema_name = get_schema_from_tenant_id(tenant_id, db)
+    if not schema_name:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Tenant {tenant_id} not found"
+        )
+
+    # Get tenant database session
+    tenant_db = next(get_tenant_db(schema_name))
+
+    try:
+        # Fetch booking
+        booking = tenant_db.query(Booking).filter(Booking.id == booking_id).first()
+
+        if not booking:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Booking {booking_id} not found"
+            )
+
+        # Build response
+        response = {
+            "id": booking.id,
+            "booking_number": booking.booking_number,
+            "order_id": booking.order_id,
+            "overall_status": booking.overall_status.value if booking.overall_status else None,
+            "travel_start_date": booking.travel_start_date.isoformat() if booking.travel_start_date else None,
+            "travel_end_date": booking.travel_end_date.isoformat() if booking.travel_end_date else None,
+            "total_passengers": booking.total_passengers,
+            "adults_count": booking.adults_count,
+            "children_count": booking.children_count,
+            "infants_count": booking.infants_count,
+            "total_services": booking.total_services,
+            "confirmed_services": booking.confirmed_services,
+            "pending_services": booking.pending_services,
+            "cancelled_services": booking.cancelled_services,
+            "total_amount": float(booking.total_amount) if booking.total_amount else 0,
+            "paid_amount": float(booking.paid_amount) if booking.paid_amount else 0,
+            "pending_amount": float(booking.pending_amount) if booking.pending_amount else 0,
+            "currency": booking.currency,
+            "primary_contact_name": booking.primary_contact_name,
+            "primary_contact_email": booking.primary_contact_email,
+            "primary_contact_phone": booking.primary_contact_phone,
+            "special_requirements": booking.special_requirements,
+            "internal_notes": booking.internal_notes,
+            "customer_notes": booking.customer_notes,
+            "created_at": booking.created_at.isoformat() if booking.created_at else None,
+            "updated_at": booking.updated_at.isoformat() if booking.updated_at else None,
+            "created_by": str(booking.created_by) if booking.created_by else None,
+            "updated_by": str(booking.updated_by) if booking.updated_by else None
+        }
+
+        # Include booking lines if requested
+        if include_lines:
+            booking_lines = tenant_db.query(BookingLine).filter(
+                BookingLine.booking_id == booking_id
+            ).all()
+
+            response["booking_lines"] = [
+                {
+                    "id": line.id,
+                    "order_line_id": line.order_line_id,
+                    "booking_status": line.booking_status.value if line.booking_status else None,
+                    "supplier_reference": line.supplier_reference,
+                    "booking_method": line.booking_method,
+                    "booked_at": line.booked_at.isoformat() if line.booked_at else None,
+                    "confirmed_at": line.confirmed_at.isoformat() if line.confirmed_at else None,
+                    "cancelled_at": line.cancelled_at.isoformat() if line.cancelled_at else None,
+                    "risk_level": line.risk_level.value if line.risk_level else None
+                }
+                for line in booking_lines
+            ]
+
+        # Include passengers if requested
+        if include_passengers:
+            booking_passengers = tenant_db.query(BookingPassenger).filter(
+                BookingPassenger.booking_id == booking_id
+            ).all()
+
+            response["passengers"] = [
+                {
+                    "id": bp.id,
+                    "passenger_id": bp.passenger_id,
+                    "is_lead_passenger": bp.is_lead_passenger,
+                    "passenger_type": bp.passenger_type.value if bp.passenger_type else None,
+                    "special_requirements": bp.special_requirements
+                }
+                for bp in booking_passengers
+            ]
+
+        return response
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error fetching booking: {str(e)}"
+        )
+    finally:
+        tenant_db.close()
+
+
+@router.put("/tenants/{tenant_id}/bookings/{booking_id}")
+async def update_booking(
+    tenant_id: str,
+    booking_id: int = Path(..., description="Booking ID"),
+    booking_update: Dict[str, Any] = {},
+    db: Session = Depends(get_db)
+):
+    """
+    Update booking information
+
+    Args:
+        tenant_id: UUID of the tenant
+        booking_id: ID of the booking to update
+        booking_update: Fields to update
+
+    Returns:
+        Updated booking information
+    """
+    # Get tenant schema
+    schema_name = get_schema_from_tenant_id(tenant_id, db)
+    if not schema_name:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Tenant {tenant_id} not found"
+        )
+
+    # Get tenant database session
+    tenant_db = next(get_tenant_db(schema_name))
+
+    try:
+        # Fetch booking
+        booking = tenant_db.query(Booking).filter(Booking.id == booking_id).first()
+
+        if not booking:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Booking {booking_id} not found"
+            )
+
+        # Update allowed fields
+        allowed_fields = [
+            "overall_status", "special_requirements", "internal_notes",
+            "customer_notes", "primary_contact_name", "primary_contact_email",
+            "primary_contact_phone", "travel_start_date", "travel_end_date"
+        ]
+
+        for field, value in booking_update.items():
+            if field in allowed_fields and hasattr(booking, field):
+                # Handle enum fields
+                if field == "overall_status" and value:
+                    value = BookingOverallStatus(value)
+                # Handle date fields
+                elif field in ["travel_start_date", "travel_end_date"] and value:
+                    value = datetime.fromisoformat(value) if isinstance(value, str) else value
+
+                setattr(booking, field, value)
+
+        booking.updated_at = datetime.utcnow()
+
+        tenant_db.commit()
+        tenant_db.refresh(booking)
+
+        return {
+            "id": booking.id,
+            "booking_number": booking.booking_number,
+            "overall_status": booking.overall_status.value if booking.overall_status else None,
+            "message": "Booking updated successfully"
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        tenant_db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error updating booking: {str(e)}"
+        )
+    finally:
+        tenant_db.close()
+
+
+@router.delete("/tenants/{tenant_id}/bookings/{booking_id}")
+async def delete_booking(
+    tenant_id: str,
+    booking_id: int = Path(..., description="Booking ID"),
+    db: Session = Depends(get_db),
+    soft_delete: bool = Query(True, description="Soft delete instead of hard delete")
+):
+    """
+    Delete or cancel a booking
+
+    Args:
+        tenant_id: UUID of the tenant
+        booking_id: ID of the booking to delete
+        soft_delete: If true, marks as cancelled instead of deleting
+
+    Returns:
+        Confirmation message
+    """
+    # Get tenant schema
+    schema_name = get_schema_from_tenant_id(tenant_id, db)
+    if not schema_name:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Tenant {tenant_id} not found"
+        )
+
+    # Get tenant database session
+    tenant_db = next(get_tenant_db(schema_name))
+
+    try:
+        # Fetch booking
+        booking = tenant_db.query(Booking).filter(Booking.id == booking_id).first()
+
+        if not booking:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Booking {booking_id} not found"
+            )
+
+        if soft_delete:
+            # Soft delete - mark as cancelled
+            booking.overall_status = BookingOverallStatus.CANCELLED
+            booking.updated_at = datetime.utcnow()
+            tenant_db.commit()
+
+            return {
+                "message": f"Booking {booking_id} has been cancelled",
+                "booking_number": booking.booking_number,
+                "status": "cancelled"
+            }
+        else:
+            # Hard delete
+            tenant_db.delete(booking)
+            tenant_db.commit()
+
+            return {
+                "message": f"Booking {booking_id} has been deleted",
+                "booking_number": booking.booking_number,
+                "status": "deleted"
+            }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        tenant_db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error deleting booking: {str(e)}"
+        )
+    finally:
+        tenant_db.close()
+
+
+@router.get("/tenants/{tenant_id}/bookings/search")
+async def search_bookings(
+    tenant_id: str,
+    q: str = Query(..., min_length=2, description="Search query"),
+    db: Session = Depends(get_db),
+    limit: int = Query(10, ge=1, le=50, description="Maximum results to return")
+):
+    """
+    Search bookings by multiple fields
+
+    Args:
+        tenant_id: UUID of the tenant
+        q: Search query string
+        limit: Maximum number of results
+
+    Returns:
+        List of bookings matching the search criteria
+    """
+    # Get tenant schema
+    schema_name = get_schema_from_tenant_id(tenant_id, db)
+    if not schema_name:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Tenant {tenant_id} not found"
+        )
+
+    # Get tenant database session
+    tenant_db = next(get_tenant_db(schema_name))
+
+    try:
+        # Build search query
+        search_term = f"%{q}%"
+
+        bookings = tenant_db.query(Booking).filter(
+            or_(
+                Booking.booking_number.ilike(search_term),
+                Booking.primary_contact_name.ilike(search_term),
+                Booking.primary_contact_email.ilike(search_term),
+                Booking.primary_contact_phone.ilike(search_term),
+                Booking.special_requirements.ilike(search_term),
+                Booking.customer_notes.ilike(search_term)
+            )
+        ).limit(limit).all()
+
+        # Format results
+        results = []
+        for booking in bookings:
+            results.append({
+                "id": booking.id,
+                "booking_number": booking.booking_number,
+                "primary_contact_name": booking.primary_contact_name,
+                "travel_start_date": booking.travel_start_date.isoformat() if booking.travel_start_date else None,
+                "overall_status": booking.overall_status.value if booking.overall_status else None,
+                "total_amount": float(booking.total_amount) if booking.total_amount else 0
+            })
+
+        return {
+            "query": q,
+            "count": len(results),
+            "results": results
+        }
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error searching bookings: {str(e)}"
+        )
+    finally:
+        tenant_db.close()
+
+
+@router.get("/tenants/{tenant_id}/bookings/statistics")
+async def get_booking_statistics(
+    tenant_id: str,
+    db: Session = Depends(get_db),
+    date_from: Optional[date] = Query(None, description="Statistics from date"),
+    date_to: Optional[date] = Query(None, description="Statistics to date")
+):
+    """
+    Get booking statistics and analytics
+
+    Args:
+        tenant_id: UUID of the tenant
+        date_from: Start date for statistics
+        date_to: End date for statistics
+
+    Returns:
+        Booking statistics and metrics
+    """
+    # Get tenant schema
+    schema_name = get_schema_from_tenant_id(tenant_id, db)
+    if not schema_name:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Tenant {tenant_id} not found"
+        )
+
+    # Get tenant database session
+    tenant_db = next(get_tenant_db(schema_name))
+
+    try:
+        # Base query
+        query = tenant_db.query(Booking)
+
+        # Apply date filters
+        if date_from:
+            query = query.filter(Booking.created_at >= date_from)
+        if date_to:
+            query = query.filter(Booking.created_at <= date_to)
+
+        # Get statistics
+        total_bookings = query.count()
+
+        # Status breakdown
+        status_counts = {}
+        for status in BookingOverallStatus:
+            count = query.filter(Booking.overall_status == status).count()
+            status_counts[status.value] = count
+
+        # Financial statistics
+        total_revenue = tenant_db.query(func.sum(Booking.total_amount)).scalar() or 0
+        total_paid = tenant_db.query(func.sum(Booking.paid_amount)).scalar() or 0
+        total_pending = tenant_db.query(func.sum(Booking.pending_amount)).scalar() or 0
+
+        # Passenger statistics
+        total_passengers = tenant_db.query(func.sum(Booking.total_passengers)).scalar() or 0
+        total_adults = tenant_db.query(func.sum(Booking.adults_count)).scalar() or 0
+        total_children = tenant_db.query(func.sum(Booking.children_count)).scalar() or 0
+        total_infants = tenant_db.query(func.sum(Booking.infants_count)).scalar() or 0
+
+        # Service statistics
+        total_services = tenant_db.query(func.sum(Booking.total_services)).scalar() or 0
+        confirmed_services = tenant_db.query(func.sum(Booking.confirmed_services)).scalar() or 0
+        pending_services = tenant_db.query(func.sum(Booking.pending_services)).scalar() or 0
+
+        return {
+            "period": {
+                "from": date_from.isoformat() if date_from else None,
+                "to": date_to.isoformat() if date_to else None
+            },
+            "totals": {
+                "bookings": total_bookings,
+                "passengers": int(total_passengers),
+                "services": int(total_services)
+            },
+            "status_breakdown": status_counts,
+            "financial": {
+                "total_revenue": float(total_revenue),
+                "total_paid": float(total_paid),
+                "total_pending": float(total_pending)
+            },
+            "passengers": {
+                "total": int(total_passengers),
+                "adults": int(total_adults),
+                "children": int(total_children),
+                "infants": int(total_infants)
+            },
+            "services": {
+                "total": int(total_services),
+                "confirmed": int(confirmed_services),
+                "pending": int(pending_services)
+            }
+        }
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error fetching statistics: {str(e)}"
+        )
+    finally:
+        tenant_db.close()
+async def list_bookings(
+    tenant_id: str,
+    db: Session = Depends(get_db),
     status_filter: Optional[str] = Query(None, description="Filter by booking status"),
     date_from: Optional[date] = Query(None, description="Filter bookings from this date"),
     date_to: Optional[date] = Query(None, description="Filter bookings until this date"),
