@@ -82,7 +82,7 @@ def initialize_tenant_schema(tenant_id: str, schema_name: str) -> bool:
         # Call system-service to initialize the tenant schema
         with httpx.Client() as client:
             response = client.post(
-                f"http://system-service:8004/api/v1/tenants/{tenant_id}/initialize",
+                f"http://system-service:8008/api/v1/tenants/{tenant_id}/initialize",
                 params={"schema_name": schema_name},
                 timeout=30
             )
@@ -103,7 +103,7 @@ def initialize_communication_service(tenant_id: str, schema_name: str) -> bool:
     try:
         with httpx.Client() as client:
             response = client.post(
-                f"http://communication-service:8010/api/v1/tenants/{tenant_id}/initialize",
+                f"http://communication-service:8005/api/v1/tenants/{tenant_id}/initialize",
                 json={"schema_name": schema_name},
                 timeout=30
             )
@@ -118,7 +118,7 @@ def initialize_crm_service(tenant_id: str, schema_name: str) -> bool:
     try:
         with httpx.Client() as client:
             response = client.post(
-                f"http://crm-service:8011/api/v1/tenants/{tenant_id}/initialize",
+                f"http://crm-service:8006/api/v1/tenants/{tenant_id}/initialize",
                 json={"schema_name": schema_name},
                 timeout=30
             )
@@ -133,7 +133,7 @@ def initialize_financial_service(tenant_id: str, schema_name: str) -> bool:
     try:
         with httpx.Client() as client:
             response = client.post(
-                f"http://financial-service:8012/api/v1/tenants/{tenant_id}/initialize",
+                f"http://financial-service:8007/api/v1/tenants/{tenant_id}/initialize",
                 json={"schema_name": schema_name},
                 timeout=30
             )
@@ -148,7 +148,7 @@ def initialize_booking_operations_service(tenant_id: str, schema_name: str) -> b
     try:
         with httpx.Client() as client:
             response = client.post(
-                f"http://booking-operations-service:8014/api/v1/tenants/{tenant_id}/initialize",
+                f"http://booking-operations-service:8004/api/v1/tenants/{tenant_id}/initialize",
                 json={"schema_name": schema_name},
                 timeout=30
             )

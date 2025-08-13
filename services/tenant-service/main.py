@@ -257,7 +257,7 @@ async def create_tenant(
         try:
             with httpx.Client() as client:
                 response = client.post(
-                    f"http://communication-service:8010/api/v1/tenants/{tenant_id}/initialize",
+                    f"http://communication-service:8005/api/v1/tenants/{tenant_id}/initialize",
                     json={"schema_name": schema_name},
                     timeout=30
                 )
@@ -267,6 +267,51 @@ async def create_tenant(
                     logger.warning(f"Failed to initialize communication-service for tenant {tenant_id}: {response.text}")
         except Exception as e:
             logger.warning(f"Error calling communication-service for tenant {tenant_id}: {str(e)}")
+
+        # Initialize CRM service tables
+        try:
+            with httpx.Client() as client:
+                response = client.post(
+                    f"http://crm-service:8006/api/v1/tenants/{tenant_id}/initialize",
+                    json={"schema_name": schema_name},
+                    timeout=30
+                )
+                if response.status_code == 200:
+                    logger.info(f"Successfully initialized CRM service for tenant {tenant_id}")
+                else:
+                    logger.warning(f"Failed to initialize CRM service for tenant {tenant_id}: {response.text}")
+        except Exception as e:
+            logger.warning(f"Error calling CRM service for tenant {tenant_id}: {str(e)}")
+
+        # Initialize Financial service tables
+        try:
+            with httpx.Client() as client:
+                response = client.post(
+                    f"http://financial-service:8007/api/v1/tenants/{tenant_id}/initialize",
+                    json={"schema_name": schema_name},
+                    timeout=30
+                )
+                if response.status_code == 200:
+                    logger.info(f"Successfully initialized Financial service for tenant {tenant_id}")
+                else:
+                    logger.warning(f"Failed to initialize Financial service for tenant {tenant_id}: {response.text}")
+        except Exception as e:
+            logger.warning(f"Error calling Financial service for tenant {tenant_id}: {str(e)}")
+
+        # Initialize Booking Operations service tables
+        try:
+            with httpx.Client() as client:
+                response = client.post(
+                    f"http://booking-operations-service:8004/api/v1/tenants/{tenant_id}/initialize",
+                    json={"schema_name": schema_name},
+                    timeout=30
+                )
+                if response.status_code == 200:
+                    logger.info(f"Successfully initialized Booking Operations service for tenant {tenant_id}")
+                else:
+                    logger.warning(f"Failed to initialize Booking Operations service for tenant {tenant_id}: {response.text}")
+        except Exception as e:
+            logger.warning(f"Error calling Booking Operations service for tenant {tenant_id}: {str(e)}")
 
         # Save user
         db.add(owner_user)
