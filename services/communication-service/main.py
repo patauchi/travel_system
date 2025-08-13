@@ -177,6 +177,48 @@ async def service_info():
     }
 
 # ============================================
+# TENANT INITIALIZATION ENDPOINT
+# ============================================
+
+@app.post("/api/v1/tenants/{tenant_id}/initialize")
+async def initialize_tenant(
+    tenant_id: str,
+    request: Dict[str, Any]
+):
+    """Initialize Communication Service tables for a new tenant"""
+    try:
+        schema_name = request.get("schema_name")
+        if not schema_name:
+            raise HTTPException(status_code=400, detail="schema_name is required")
+
+        logger.info(f"Initializing Communication schema for tenant {tenant_id}")
+
+        # Initialize the schema with Communication tables
+        result = schema_manager.initialize_tenant_schema(tenant_id, schema_name)
+
+        if result["status"] == "success":
+            logger.info(f"Successfully initialized Communication schema for tenant {tenant_id}")
+            return {
+                "tenant_id": tenant_id,
+                "schema_name": schema_name,
+                "service": "communication-service",
+                "status": "success",
+                "tables_created": result.get("tables_created", []),
+                "errors": []
+            }
+        else:
+            logger.error(f"Failed to initialize Communication schema for tenant {tenant_id}: {result.get('errors')}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to initialize schema: {result.get('errors', ['Unknown error'])}"
+            )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error initializing tenant {tenant_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ============================================
 # WEBHOOK ENDPOINTS
 # ============================================
 
