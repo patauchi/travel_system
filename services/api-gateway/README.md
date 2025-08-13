@@ -19,7 +19,6 @@ The API Gateway provides:
 | API Gateway | http://api-gateway:8000 | 8000 | / |
 | Auth Service | http://auth-service:8001 | 8001 | /api/v1/auth |
 | Tenant Service | http://tenant-service:8002 | 8002 | /api/v1/tenants |
-| Business Service | http://business-service:8003 | 8003 | /api/v1/business |
 | Booking Operations Service | http://booking-operations-service:8004 | 8004 | /api/v1/bookings |
 | Communication Service | http://communication-service:8005 | 8005 | /api/v1/communications |
 | CRM Service | http://crm-service:8006 | 8006 | /api/v1/crm |
@@ -58,14 +57,6 @@ The API Gateway provides:
   - `POST /api/v1/tenants` - Create tenant
   - `GET /api/v1/tenants/{id}` - Get tenant details
   - `PUT /api/v1/tenants/{id}` - Update tenant
-
-### Business Service Routes
-- **Base Path**: `/api/v1/business`
-- **All Methods**: GET, POST, PUT, DELETE, PATCH
-- Routes business logic requests to the Business Service
-- Examples:
-  - `GET /api/v1/business/stats` - Business statistics
-  - `POST /api/v1/business/reports` - Generate reports
 
 ### Booking Operations Routes
 - **Base Path**: `/api/v1/bookings`
@@ -127,7 +118,6 @@ The API Gateway provides:
 # Service URLs
 AUTH_SERVICE_URL=http://auth-service:8001
 TENANT_SERVICE_URL=http://tenant-service:8002
-BUSINESS_SERVICE_URL=http://business-service:8003
 BOOKING_SERVICE_URL=http://booking-operations-service:8004
 COMMUNICATION_SERVICE_URL=http://communication-service:8005
 CRM_SERVICE_URL=http://crm-service:8006
@@ -213,6 +203,7 @@ curl http://localhost:8000/health
   "dependencies": [
     {"name": "auth-service", "status": "healthy", "url": "http://auth-service:8001"},
     {"name": "tenant-service", "status": "healthy", "url": "http://tenant-service:8002"},
+    {"name": "booking-operations-service", "status": "healthy", "url": "http://booking-operations-service:8004"},
     ...
   ]
 }

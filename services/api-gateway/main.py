@@ -41,7 +41,6 @@ security = HTTPBearer(auto_error=False)
 # Service URLs
 AUTH_SERVICE_URL = os.getenv("AUTH_SERVICE_URL", "http://auth-service:8001")
 TENANT_SERVICE_URL = os.getenv("TENANT_SERVICE_URL", "http://tenant-service:8002")
-BUSINESS_SERVICE_URL = os.getenv("BUSINESS_SERVICE_URL", "http://business-service:8003")
 BOOKING_SERVICE_URL = os.getenv("BOOKING_SERVICE_URL", "http://booking-operations-service:8004")
 COMMUNICATION_SERVICE_URL = os.getenv("COMMUNICATION_SERVICE_URL", "http://communication-service:8005")
 CRM_SERVICE_URL = os.getenv("CRM_SERVICE_URL", "http://crm-service:8006")
@@ -120,7 +119,6 @@ async def root():
             "redoc": "/redoc",
             "auth": "/api/v1/auth",
             "tenants": "/api/v1/tenants",
-            "business": "/api/v1/business",
             "bookings": "/api/v1/bookings",
             "communications": "/api/v1/communications",
             "crm": "/api/v1/crm",
@@ -130,7 +128,6 @@ async def root():
         "services": {
             "auth": AUTH_SERVICE_URL,
             "tenant": TENANT_SERVICE_URL,
-            "business": BUSINESS_SERVICE_URL,
             "booking": BOOKING_SERVICE_URL,
             "communication": COMMUNICATION_SERVICE_URL,
             "crm": CRM_SERVICE_URL,
@@ -145,7 +142,6 @@ async def health_check():
     services_health = await asyncio.gather(
         check_service_health(AUTH_SERVICE_URL, "auth-service"),
         check_service_health(TENANT_SERVICE_URL, "tenant-service"),
-        check_service_health(BUSINESS_SERVICE_URL, "business-service"),
         check_service_health(BOOKING_SERVICE_URL, "booking-operations-service"),
         check_service_health(COMMUNICATION_SERVICE_URL, "communication-service"),
         check_service_health(CRM_SERVICE_URL, "crm-service"),
@@ -175,7 +171,6 @@ async def services_status():
     services_health = await asyncio.gather(
         check_service_health(AUTH_SERVICE_URL, "auth-service"),
         check_service_health(TENANT_SERVICE_URL, "tenant-service"),
-        check_service_health(BUSINESS_SERVICE_URL, "business-service"),
         check_service_health(BOOKING_SERVICE_URL, "booking-operations-service"),
         check_service_health(COMMUNICATION_SERVICE_URL, "communication-service"),
         check_service_health(CRM_SERVICE_URL, "crm-service"),
@@ -210,17 +205,6 @@ async def proxy_tenants_base(request: Request):
 async def proxy_tenants(request: Request, path: str):
     """Proxy requests to tenant service"""
     return await proxy_request(request, TENANT_SERVICE_URL, f"/api/v1/tenants/{path}")
-
-# Business Service Routes
-@app.api_route("/api/v1/business", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
-async def proxy_business_base(request: Request):
-    """Proxy requests to business service base"""
-    return await proxy_request(request, BUSINESS_SERVICE_URL, "/api/v1/business")
-
-@app.api_route("/api/v1/business/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
-async def proxy_business(request: Request, path: str):
-    """Proxy requests to business service"""
-    return await proxy_request(request, BUSINESS_SERVICE_URL, f"/api/v1/business/{path}")
 
 # Booking Operations Service Routes
 @app.api_route("/api/v1/bookings", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
@@ -350,7 +334,6 @@ async def catch_all(request: Request, path: str):
             "available_endpoints": [
                 "/api/v1/auth",
                 "/api/v1/tenants",
-                "/api/v1/business",
                 "/api/v1/bookings",
                 "/api/v1/communications",
                 "/api/v1/crm",

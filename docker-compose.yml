@@ -71,7 +71,6 @@ services:
       - ENVIRONMENT=development
       - AUTH_SERVICE_URL=http://auth-service:8001
       - TENANT_SERVICE_URL=http://tenant-service:8002
-      - BUSINESS_SERVICE_URL=http://business-service:8003
       - BOOKING_SERVICE_URL=http://booking-operations-service:8004
       - COMMUNICATION_SERVICE_URL=http://communication-service:8005
       - CRM_SERVICE_URL=http://crm-service:8006
@@ -161,29 +160,6 @@ services:
     volumes:
       - ./services/system-service:/app
     command: uvicorn main:app --host 0.0.0.0 --port 8008 --reload
-
-  # Business Service (Example microservice)
-  business-service:
-    build:
-      context: ./services/business-service
-      dockerfile: Dockerfile
-    container_name: multitenant-business-service
-    ports:
-      - "8003:8003"
-    environment:
-      - ENVIRONMENT=development
-      - DATABASE_URL=postgresql://postgres:postgres123@postgres:5432/multitenant_db
-      - REDIS_URL=redis://redis:6379
-      - RABBITMQ_URL=amqp://admin:admin123@rabbitmq:5672/
-    depends_on:
-      - postgres
-      - redis
-      - rabbitmq
-    networks:
-      - multitenant-network
-    volumes:
-      - ./services/business-service:/app
-    command: uvicorn main:app --host 0.0.0.0 --port 8003 --reload
 
   # Frontend React Application
   frontend:
