@@ -171,38 +171,44 @@ class User(Base):
     last_name = Column(String(100))
     full_name = Column(String(255))
     phone = Column(String(50))
-    mobile = Column(String(50))
+    phone_secondary = Column(String(50))
     avatar_url = Column(Text)
+    bio = Column(Text)
 
     # Organization Information
-    employee_id = Column(String(50), unique=True)
+    title = Column(String(100))
     department = Column(String(100))
-    job_title = Column(String(100))
-    manager_id = Column(UUID(as_uuid=True), ForeignKey('users.id'))
-    location = Column(String(100))
+    employee_id = Column(String(50), unique=True)
     timezone = Column(String(50), default='UTC')
     language = Column(String(10), default='en')
+    currency = Column(String(3), default='USD')
+    date_format = Column(String(20), default='YYYY-MM-DD')
+    time_format = Column(String(10), default='24h')
 
     # Status and Security
-    status = Column(SQLEnum(UserStatus), default=UserStatus.PENDING)
+    status = Column(String(20), default='active')
     is_active = Column(Boolean, default=True)
     is_verified = Column(Boolean, default=False)
     email_verified_at = Column(DateTime(timezone=True))
+    phone_verified_at = Column(DateTime(timezone=True))
     last_login_at = Column(DateTime(timezone=True))
     last_activity_at = Column(DateTime(timezone=True))
     failed_login_attempts = Column(Integer, default=0)
     locked_until = Column(DateTime(timezone=True))
     password_changed_at = Column(DateTime(timezone=True))
-    must_change_password = Column(Boolean, default=False)
+
+    # Notifications
+    notification_preferences = Column(JSONB, default={})
+    email_notifications = Column(Boolean, default=True)
+    push_notifications = Column(Boolean, default=True)
+    sms_notifications = Column(Boolean, default=False)
 
     # Two-Factor Authentication
     two_factor_enabled = Column(Boolean, default=False)
     two_factor_secret = Column(String(255))
-    two_factor_backup_codes = Column(JSONB)
 
-    # Preferences and Metadata
-    preferences = Column(JSONB, default={})
-    meta_data = Column(JSONB, default={})
+    # Metadata
+    metadata_json = Column(JSONB, default={})
     tags = Column(JSONB, default=[])
 
     # Audit Fields
@@ -216,7 +222,6 @@ class User(Base):
     # Relationships
     roles = relationship("Role", secondary=user_roles, back_populates="users")
     teams = relationship("Team", secondary=team_members, back_populates="members")
-    managed_users = relationship("User", backref="manager", remote_side=[id])
     sessions = relationship("UserSession", back_populates="user", cascade="all, delete-orphan")
     audit_logs = relationship("AuditLog", back_populates="user", cascade="all, delete-orphan")
 

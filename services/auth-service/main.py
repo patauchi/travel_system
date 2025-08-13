@@ -64,6 +64,54 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("Starting Auth Service...")
     Base.metadata.create_all(bind=engine)
+
+    # Initialize super_admin on first startup
+    try:
+        from services.shared.init_super_admin import SuperAdminInitializer
+        initializer = SuperAdminInitializer()
+        if initializer.initialize():
+            logger.info("Super admin initialization completed")
+        else:
+            logger.warning("Super admin initialization failed or skipped")
+    except ImportError:
+        # If the module is not available, try inline initialization
+        logger.info("Checking for super_admin user...")
+        try:
+            from sqlalchemy import text
+            with engine.connect() as conn:
+                result = conn.execute(text("""
+                    SELECT COUNT(*) FROM shared.central_users
+                    WHERE username = 'superadmin' OR email = 'admin@system.local'
+                """))
+                if result.scalar() == 0:
+                    # Create super_admin
+                    import uuid
+                    from passlib.context import CryptContext
+                    pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
+                    user_id = str(uuid.uuid4())
+                    password_hash = pwd_ctx.hash("SuperAdmin123!")
+
+                    conn.execute(text("""
+                        INSERT INTO shared.central_users (
+                            id, email, username, password_hash,
+                            first_name, last_name,
+                            is_active, is_verified, email_verified_at,
+                            created_at, updated_at
+                        ) VALUES (
+                            :id, 'admin@system.local', 'superadmin', :password_hash,
+                            'System', 'Administrator',
+                            true, true, CURRENT_TIMESTAMP,
+                            CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                        )
+                    """), {'id': user_id, 'password_hash': password_hash})
+                    conn.commit()
+                    logger.info("Super admin created: username=superadmin, password=SuperAdmin123!")
+                    logger.warning("⚠️ IMPORTANT: Change the super_admin password immediately!")
+                else:
+                    logger.info("Super admin already exists")
+        except Exception as e:
+            logger.error(f"Failed to initialize super_admin: {str(e)}")
+
     yield
     # Shutdown
     logger.info("Shutting down Auth Service...")
@@ -119,7 +167,10 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
         expire = datetime.utcnow() + expires_delta
     else:
         expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    to_encode.update({"exp": expire, "type": "access"})
+    to_encode.update({"exp": expire})
+    # Don't override the type if it's already set (system, tenant, user)
+    if "type" not in to_encode:
+        to_encode["type"] = "access"
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 def create_refresh_token(data: dict):
@@ -259,7 +310,7 @@ async def register(
             }
         else:
             # System admin registration (main domain only)
-            # Check if user exists in shared.users
+            # Check if user exists in shared.central_users
             existing_user = db.query(User).filter(
                 (User.email == user_data.email) | (User.username == user_data.username)
             ).first()
@@ -407,7 +458,7 @@ async def login(
                 tenant_db.commit()
 
         else:
-            # System login - query shared.users table
+            # System login - query shared.central_users table
             user = db.query(User).filter(User.username == form_data.username).first()
 
             if user:
@@ -468,6 +519,14 @@ async def login(
             "username": user_data['username'],
             "role": user_role
         }
+
+        # Add type field based on role
+        if user_role == "super_admin":
+            token_data["type"] = "system"
+        elif user_role in ["tenant_admin", "tenant_user"]:
+            token_data["type"] = "tenant"
+        else:
+            token_data["type"] = "user"
 
         if tenant_info:
             token_data.update({
@@ -544,17 +603,26 @@ async def refresh_token(
         # Create new access token
         token_data = {
             "sub": payload["sub"],
-            "email": payload.get("email"),
-            "username": payload.get("username"),
-            "role": payload.get("role")
+            "email": payload["email"],
+            "username": payload["username"],
+            "role": payload["role"]
         }
 
-        # Include tenant info if present
-        if payload.get("tenant_id"):
+        # Preserve the type from the original token
+        if "type" in payload:
+            token_data["type"] = payload["type"]
+        elif payload["role"] == "super_admin":
+            token_data["type"] = "system"
+        elif payload["role"] in ["tenant_admin", "tenant_user"]:
+            token_data["type"] = "tenant"
+        else:
+            token_data["type"] = "user"
+
+        if "tenant_id" in payload:
             token_data.update({
                 "tenant_id": payload["tenant_id"],
-                "tenant_slug": payload.get("tenant_slug"),
-                "tenant_schema": payload.get("tenant_schema")
+                "tenant_slug": payload["tenant_slug"],
+                "tenant_schema": payload["tenant_schema"]
             })
 
         new_access_token = create_access_token(token_data)
@@ -634,7 +702,7 @@ async def get_current_user_info(
                     "tenant": auth_ctx.tenant_info
                 }
         else:
-            # Get user from shared.users
+            # Get user from shared.central_users
             user = db.query(User).filter(User.id == current_user["sub"]).first()
             if user:
                 return {

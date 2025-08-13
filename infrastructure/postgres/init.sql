@@ -14,13 +14,13 @@ CREATE SCHEMA IF NOT EXISTS shared;
 -- Set search path
 SET search_path TO public, shared;
 
--- Create enum types
-CREATE TYPE user_role AS ENUM ('super_admin', 'tenant_admin', 'tenant_user', 'tenant_viewer');
+-- Create enum types (only two roles)
+CREATE TYPE user_role AS ENUM ('super_admin', 'tenant_admin');
 CREATE TYPE tenant_status AS ENUM ('active', 'suspended', 'trial', 'expired', 'pending');
 CREATE TYPE subscription_plan AS ENUM ('free', 'starter', 'professional', 'enterprise');
 
--- Table: tenants (in shared schema)
-CREATE TABLE IF NOT EXISTS shared.tenants (
+-- Table: central_tenants (in shared schema)
+CREATE TABLE IF NOT EXISTS shared.central_tenants (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     slug VARCHAR(100) UNIQUE NOT NULL,
     name VARCHAR(255) NOT NULL,
@@ -40,8 +40,8 @@ CREATE TABLE IF NOT EXISTS shared.tenants (
     subscription_ends_at TIMESTAMP WITH TIME ZONE
 );
 
--- Table: users (in shared schema - global users)
-CREATE TABLE IF NOT EXISTS shared.users (
+-- Table: central_users (in shared schema - global users)
+CREATE TABLE IF NOT EXISTS shared.central_users (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     email VARCHAR(255) UNIQUE NOT NULL,
     username VARCHAR(100) UNIQUE NOT NULL,
@@ -49,6 +49,7 @@ CREATE TABLE IF NOT EXISTS shared.users (
     first_name VARCHAR(100),
     last_name VARCHAR(100),
     phone VARCHAR(50),
+    role user_role DEFAULT 'tenant_admin',
     is_active BOOLEAN DEFAULT true,
     is_verified BOOLEAN DEFAULT false,
     email_verified_at TIMESTAMP WITH TIME ZONE,
@@ -61,26 +62,26 @@ CREATE TABLE IF NOT EXISTS shared.users (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
--- Table: tenant_users (user-tenant relationship)
-CREATE TABLE IF NOT EXISTS shared.tenant_users (
+-- Table: central_tenant_users (user-tenant relationship)
+CREATE TABLE IF NOT EXISTS shared.central_tenant_users (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    tenant_id UUID NOT NULL REFERENCES shared.tenants(id) ON DELETE CASCADE,
-    user_id UUID NOT NULL REFERENCES shared.users(id) ON DELETE CASCADE,
-    role user_role DEFAULT 'tenant_user',
+    tenant_id UUID NOT NULL REFERENCES shared.central_tenants(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES shared.central_users(id) ON DELETE CASCADE,
+    role user_role DEFAULT 'tenant_admin',
     is_owner BOOLEAN DEFAULT false,
     permissions JSONB DEFAULT '{}',
     joined_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    invited_by UUID REFERENCES shared.users(id),
+    invited_by UUID REFERENCES shared.central_users(id),
     invitation_token VARCHAR(255),
     invitation_accepted_at TIMESTAMP WITH TIME ZONE,
     last_active_at TIMESTAMP WITH TIME ZONE,
     UNIQUE(tenant_id, user_id)
 );
 
--- Table: api_keys (for tenant API access)
-CREATE TABLE IF NOT EXISTS shared.api_keys (
+-- Table: central_api_keys (for tenant API access)
+CREATE TABLE IF NOT EXISTS shared.central_api_keys (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    tenant_id UUID NOT NULL REFERENCES shared.tenants(id) ON DELETE CASCADE,
+    tenant_id UUID NOT NULL REFERENCES shared.central_tenants(id) ON DELETE CASCADE,
     name VARCHAR(255) NOT NULL,
     key_hash VARCHAR(255) NOT NULL,
     key_prefix VARCHAR(10) NOT NULL,
@@ -88,17 +89,17 @@ CREATE TABLE IF NOT EXISTS shared.api_keys (
     rate_limit INTEGER DEFAULT 1000,
     expires_at TIMESTAMP WITH TIME ZONE,
     last_used_at TIMESTAMP WITH TIME ZONE,
-    created_by UUID REFERENCES shared.users(id),
+    created_by UUID REFERENCES shared.central_users(id),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     revoked_at TIMESTAMP WITH TIME ZONE,
     UNIQUE(tenant_id, name)
 );
 
--- Table: audit_logs (system-wide audit)
-CREATE TABLE IF NOT EXISTS shared.audit_logs (
+-- Table: central_audit_logs (system-wide audit)
+CREATE TABLE IF NOT EXISTS shared.central_audit_logs (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    tenant_id UUID REFERENCES shared.tenants(id) ON DELETE SET NULL,
-    user_id UUID REFERENCES shared.users(id) ON DELETE SET NULL,
+    tenant_id UUID REFERENCES shared.central_tenants(id) ON DELETE SET NULL,
+    user_id UUID REFERENCES shared.central_users(id) ON DELETE SET NULL,
     action VARCHAR(100) NOT NULL,
     resource_type VARCHAR(100),
     resource_id VARCHAR(255),
@@ -108,8 +109,8 @@ CREATE TABLE IF NOT EXISTS shared.audit_logs (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
--- Table: feature_flags
-CREATE TABLE IF NOT EXISTS shared.feature_flags (
+-- Table: central_feature_flags
+CREATE TABLE IF NOT EXISTS shared.central_feature_flags (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     name VARCHAR(100) UNIQUE NOT NULL,
     description TEXT,
@@ -120,22 +121,22 @@ CREATE TABLE IF NOT EXISTS shared.feature_flags (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
--- Table: tenant_features (feature flags per tenant)
-CREATE TABLE IF NOT EXISTS shared.tenant_features (
+-- Table: central_tenant_features (feature flags per tenant)
+CREATE TABLE IF NOT EXISTS shared.central_tenant_features (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    tenant_id UUID NOT NULL REFERENCES shared.tenants(id) ON DELETE CASCADE,
-    feature_id UUID NOT NULL REFERENCES shared.feature_flags(id) ON DELETE CASCADE,
+    tenant_id UUID NOT NULL REFERENCES shared.central_tenants(id) ON DELETE CASCADE,
+    feature_id UUID NOT NULL REFERENCES shared.central_feature_flags(id) ON DELETE CASCADE,
     is_enabled BOOLEAN NOT NULL,
     configuration JSONB DEFAULT '{}',
     enabled_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    enabled_by UUID REFERENCES shared.users(id),
+    enabled_by UUID REFERENCES shared.central_users(id),
     UNIQUE(tenant_id, feature_id)
 );
 
--- Table: subscription_history
-CREATE TABLE IF NOT EXISTS shared.subscription_history (
+-- Table: central_subscription_history
+CREATE TABLE IF NOT EXISTS shared.central_subscription_history (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    tenant_id UUID NOT NULL REFERENCES shared.tenants(id) ON DELETE CASCADE,
+    tenant_id UUID NOT NULL REFERENCES shared.central_tenants(id) ON DELETE CASCADE,
     plan_from subscription_plan,
     plan_to subscription_plan NOT NULL,
     change_type VARCHAR(50) NOT NULL, -- upgrade, downgrade, renewal, cancellation
@@ -144,14 +145,14 @@ CREATE TABLE IF NOT EXISTS shared.subscription_history (
     payment_method VARCHAR(50),
     transaction_id VARCHAR(255),
     changed_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    changed_by UUID REFERENCES shared.users(id),
+    changed_by UUID REFERENCES shared.central_users(id),
     notes TEXT
 );
 
--- Table: webhooks
-CREATE TABLE IF NOT EXISTS shared.webhooks (
+-- Table: central_webhooks
+CREATE TABLE IF NOT EXISTS shared.central_webhooks (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    tenant_id UUID NOT NULL REFERENCES shared.tenants(id) ON DELETE CASCADE,
+    tenant_id UUID NOT NULL REFERENCES shared.central_tenants(id) ON DELETE CASCADE,
     name VARCHAR(255) NOT NULL,
     url TEXT NOT NULL,
     events JSONB NOT NULL DEFAULT '[]',
@@ -166,10 +167,10 @@ CREATE TABLE IF NOT EXISTS shared.webhooks (
     UNIQUE(tenant_id, name)
 );
 
--- Table: webhook_logs
-CREATE TABLE IF NOT EXISTS shared.webhook_logs (
+-- Table: central_webhook_logs
+CREATE TABLE IF NOT EXISTS shared.central_webhook_logs (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    webhook_id UUID NOT NULL REFERENCES shared.webhooks(id) ON DELETE CASCADE,
+    webhook_id UUID NOT NULL REFERENCES shared.central_webhooks(id) ON DELETE CASCADE,
     event_type VARCHAR(100) NOT NULL,
     payload JSONB NOT NULL,
     response_status INTEGER,
@@ -181,101 +182,64 @@ CREATE TABLE IF NOT EXISTS shared.webhook_logs (
     completed_at TIMESTAMP WITH TIME ZONE
 );
 
--- Table: system_settings
-CREATE TABLE IF NOT EXISTS shared.system_settings (
+-- Table: central_system_settings
+CREATE TABLE IF NOT EXISTS shared.central_system_settings (
     key VARCHAR(100) PRIMARY KEY,
     value JSONB NOT NULL,
     description TEXT,
     is_public BOOLEAN DEFAULT false,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    updated_by UUID REFERENCES shared.users(id)
+    updated_by UUID REFERENCES shared.central_users(id)
 );
 
 -- Indexes for performance
-CREATE INDEX idx_tenants_slug ON shared.tenants(slug);
-CREATE INDEX idx_tenants_subdomain ON shared.tenants(subdomain);
-CREATE INDEX idx_tenants_status ON shared.tenants(status);
-CREATE INDEX idx_users_email ON shared.users(email);
-CREATE INDEX idx_users_username ON shared.users(username);
-CREATE INDEX idx_tenant_users_tenant_id ON shared.tenant_users(tenant_id);
-CREATE INDEX idx_tenant_users_user_id ON shared.tenant_users(user_id);
-CREATE INDEX idx_api_keys_tenant_id ON shared.api_keys(tenant_id);
-CREATE INDEX idx_api_keys_key_prefix ON shared.api_keys(key_prefix);
-CREATE INDEX idx_audit_logs_tenant_id ON shared.audit_logs(tenant_id);
-CREATE INDEX idx_audit_logs_user_id ON shared.audit_logs(user_id);
-CREATE INDEX idx_audit_logs_created_at ON shared.audit_logs(created_at);
-CREATE INDEX idx_webhook_logs_webhook_id ON shared.webhook_logs(webhook_id);
-CREATE INDEX idx_webhook_logs_created_at ON shared.webhook_logs(created_at);
-
--- Create template schema for tenants
-CREATE SCHEMA IF NOT EXISTS tenant_template;
-
--- Switch to template schema
-SET search_path TO tenant_template, public;
-
-
-CREATE TABLE IF NOT EXISTS tenant_template.activity_log (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    user_id UUID NOT NULL,
-    action VARCHAR(100) NOT NULL,
-    resource_type VARCHAR(50),
-    resource_id UUID,
-    changes JSONB DEFAULT '{}',
-    ip_address INET,
-    user_agent TEXT,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-);
-
--- Indexes for template schema
-CREATE INDEX idx_profiles_user_id ON tenant_template.profiles(user_id);
-CREATE INDEX idx_projects_owner_id ON tenant_template.projects(owner_id);
-CREATE INDEX idx_documents_project_id ON tenant_template.documents(project_id);
-CREATE INDEX idx_tasks_project_id ON tenant_template.tasks(project_id);
-CREATE INDEX idx_tasks_assignee_id ON tenant_template.tasks(assignee_id);
-CREATE INDEX idx_comments_resource ON tenant_template.comments(resource_type, resource_id);
-CREATE INDEX idx_notifications_user_id ON tenant_template.notifications(user_id);
-CREATE INDEX idx_notifications_is_read ON tenant_template.notifications(is_read);
-CREATE INDEX idx_activity_log_user_id ON tenant_template.activity_log(user_id);
-CREATE INDEX idx_activity_log_created_at ON tenant_template.activity_log(created_at);
-
--- Reset search path
-SET search_path TO public;
+CREATE INDEX idx_central_tenants_slug ON shared.central_tenants(slug);
+CREATE INDEX idx_central_tenants_subdomain ON shared.central_tenants(subdomain);
+CREATE INDEX idx_central_tenants_status ON shared.central_tenants(status);
+CREATE INDEX idx_central_users_email ON shared.central_users(email);
+CREATE INDEX idx_central_users_username ON shared.central_users(username);
+CREATE INDEX idx_central_users_role ON shared.central_users(role);
+CREATE INDEX idx_central_tenant_users_tenant_id ON shared.central_tenant_users(tenant_id);
+CREATE INDEX idx_central_tenant_users_user_id ON shared.central_tenant_users(user_id);
+CREATE INDEX idx_central_api_keys_tenant_id ON shared.central_api_keys(tenant_id);
+CREATE INDEX idx_central_api_keys_key_prefix ON shared.central_api_keys(key_prefix);
+CREATE INDEX idx_central_audit_logs_tenant_id ON shared.central_audit_logs(tenant_id);
+CREATE INDEX idx_central_audit_logs_user_id ON shared.central_audit_logs(user_id);
+CREATE INDEX idx_central_audit_logs_created_at ON shared.central_audit_logs(created_at);
+CREATE INDEX idx_central_webhook_logs_webhook_id ON shared.central_webhook_logs(webhook_id);
+CREATE INDEX idx_central_webhook_logs_created_at ON shared.central_webhook_logs(created_at);
 
 -- Function to create a new tenant schema
 CREATE OR REPLACE FUNCTION create_tenant_schema(tenant_schema_name VARCHAR)
 RETURNS VOID AS $$
-DECLARE
-    sql_statement TEXT;
 BEGIN
     -- Create the new schema
     EXECUTE format('CREATE SCHEMA IF NOT EXISTS %I', tenant_schema_name);
 
-    -- Copy all tables from tenant_template to the new schema
-    FOR sql_statement IN
-        SELECT format('CREATE TABLE %I.%I (LIKE tenant_template.%I INCLUDING ALL)',
-                     tenant_schema_name, table_name, table_name)
-        FROM information_schema.tables
-        WHERE table_schema = 'tenant_template'
-        AND table_type = 'BASE TABLE'
-    LOOP
-        EXECUTE sql_statement;
-    END LOOP;
+    -- Set search path to the new schema
+    EXECUTE format('SET search_path TO %I', tenant_schema_name);
 
-    -- Copy all indexes
-    FOR sql_statement IN
-        SELECT replace(replace(indexdef, 'tenant_template.', tenant_schema_name || '.'),
-                      'ON tenant_template.', 'ON ' || tenant_schema_name || '.')
-        FROM pg_indexes
-        WHERE schemaname = 'tenant_template'
-        AND indexname NOT LIKE '%_pkey'  -- Skip primary key indexes as they're created with INCLUDING ALL
-    LOOP
-        BEGIN
-            EXECUTE sql_statement;
-        EXCEPTION WHEN duplicate_table THEN
-            -- Index already exists, skip
-            NULL;
-        END;
-    END LOOP;
+    -- Create basic audit_log table for the tenant
+    EXECUTE format('CREATE TABLE IF NOT EXISTS %I.audit_log (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id UUID NOT NULL,
+        action VARCHAR(100) NOT NULL,
+        resource_type VARCHAR(50),
+        resource_id UUID,
+        changes JSONB DEFAULT %L,
+        ip_address INET,
+        user_agent TEXT,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    )', tenant_schema_name, '{}');
+
+    -- Create index for audit_log
+    EXECUTE format('CREATE INDEX IF NOT EXISTS idx_%s_audit_log_user_id ON %I.audit_log(user_id)',
+                   replace(tenant_schema_name, '-', '_'), tenant_schema_name);
+    EXECUTE format('CREATE INDEX IF NOT EXISTS idx_%s_audit_log_created_at ON %I.audit_log(created_at)',
+                   replace(tenant_schema_name, '-', '_'), tenant_schema_name);
+
+    -- Reset search path
+    SET search_path TO public;
 END;
 $$ LANGUAGE plpgsql;
 
@@ -305,8 +269,11 @@ BEGIN
         SELECT table_schema, table_name
         FROM information_schema.columns
         WHERE column_name = 'updated_at'
-        AND table_schema IN ('shared', 'tenant_template')
+        AND table_schema = 'shared'
+        AND table_name LIKE 'central_%'
     LOOP
+        EXECUTE format('DROP TRIGGER IF EXISTS update_%I_updated_at ON %I.%I',
+                       t.table_name, t.table_schema, t.table_name);
         EXECUTE format('CREATE TRIGGER update_%I_updated_at BEFORE UPDATE ON %I.%I
                        FOR EACH ROW EXECUTE FUNCTION update_updated_at_column()',
                        t.table_name, t.table_schema, t.table_name);
@@ -315,7 +282,7 @@ END;
 $$;
 
 -- Insert default system settings
-INSERT INTO shared.system_settings (key, value, description, is_public) VALUES
+INSERT INTO shared.central_system_settings (key, value, description, is_public) VALUES
     ('default_tenant_plan', '"free"', 'Default subscription plan for new tenants', false),
     ('trial_days', '14', 'Number of days for trial period', false),
     ('max_login_attempts', '5', 'Maximum failed login attempts before account lock', false),
@@ -323,10 +290,11 @@ INSERT INTO shared.system_settings (key, value, description, is_public) VALUES
     ('password_min_length', '8', 'Minimum password length', true),
     ('session_timeout_minutes', '60', 'Session timeout in minutes', false),
     ('enable_two_factor', 'false', 'Enable two-factor authentication', true),
-    ('maintenance_mode', 'false', 'System maintenance mode', true);
+    ('maintenance_mode', 'false', 'System maintenance mode', true)
+ON CONFLICT (key) DO NOTHING;
 
 -- Insert default feature flags
-INSERT INTO shared.feature_flags (name, description, is_enabled, rollout_percentage) VALUES
+INSERT INTO shared.central_feature_flags (name, description, is_enabled, rollout_percentage) VALUES
     ('dark_mode', 'Enable dark mode UI', true, 100),
     ('advanced_analytics', 'Advanced analytics dashboard', false, 0),
     ('api_v2', 'New API version 2', false, 10),
@@ -334,25 +302,39 @@ INSERT INTO shared.feature_flags (name, description, is_enabled, rollout_percent
     ('export_data', 'Allow data export', true, 100),
     ('webhooks', 'Enable webhook integrations', false, 50),
     ('custom_branding', 'Allow custom branding', false, 0),
-    ('sso_integration', 'Single Sign-On integration', false, 0);
+    ('sso_integration', 'Single Sign-On integration', false, 0)
+ON CONFLICT (name) DO NOTHING;
 
--- Create initial super admin user (password: Admin123!)
-INSERT INTO shared.users (email, username, password_hash, first_name, last_name, is_active, is_verified, email_verified_at)
+-- Create initial super admin user (password: SuperAdmin123!)
+-- This will be replaced by environment variables in production
+INSERT INTO shared.central_users (
+    id,
+    email,
+    username,
+    password_hash,
+    first_name,
+    last_name,
+    role,
+    is_active,
+    is_verified,
+    email_verified_at
+)
 VALUES (
-    'admin@multitenant.com',
+    uuid_generate_v4(),
+    'admin@system.local',
     'superadmin',
-    '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewY5L2oLYFsT4JQe', -- bcrypt hash of 'Admin123!'
-    'Super',
-    'Admin',
+    '$2b$12$K8Z.3V.KNWsJZH0GDTJmNeFKpWVGBXiXHGJK6YqLqY8hSYxKxGJNy', -- bcrypt hash of 'SuperAdmin123!'
+    'System',
+    'Administrator',
+    'super_admin',
     true,
     true,
     CURRENT_TIMESTAMP
-);
+)
+ON CONFLICT (email) DO NOTHING;
 
 -- Grant permissions
 GRANT ALL PRIVILEGES ON SCHEMA shared TO postgres;
-GRANT ALL PRIVILEGES ON SCHEMA tenant_template TO postgres;
 GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA shared TO postgres;
-GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA tenant_template TO postgres;
 GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA shared TO postgres;
-GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA tenant_template TO postgres;
+GRANT ALL PRIVILEGES ON ALL FUNCTIONS IN SCHEMA shared TO postgres;

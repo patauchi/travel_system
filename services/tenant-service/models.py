@@ -10,8 +10,6 @@ from datetime import datetime
 class UserRole(str, enum.Enum):
     SUPER_ADMIN = "super_admin"
     TENANT_ADMIN = "tenant_admin"
-    TENANT_USER = "tenant_user"
-    TENANT_VIEWER = "tenant_viewer"
 
 class TenantStatus(str, enum.Enum):
     ACTIVE = "active"
@@ -28,7 +26,7 @@ class SubscriptionPlan(str, enum.Enum):
 
 # Models
 class User(Base):
-    __tablename__ = "users"
+    __tablename__ = "central_users"
     __table_args__ = {"schema": "shared"}
 
     id = Column(String(36), primary_key=True)
@@ -50,7 +48,7 @@ class User(Base):
     updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
 
 class Tenant(Base):
-    __tablename__ = "tenants"
+    __tablename__ = "central_tenants"
     __table_args__ = {"schema": "shared"}
 
     id = Column(String(36), primary_key=True)
@@ -72,27 +70,27 @@ class Tenant(Base):
     subscription_ends_at = Column(DateTime(timezone=True))
 
 class TenantUser(Base):
-    __tablename__ = "tenant_users"
+    __tablename__ = "central_tenant_users"
     __table_args__ = {"schema": "shared"}
 
     id = Column(String(36), primary_key=True)
-    tenant_id = Column(String(36), ForeignKey("shared.tenants.id", ondelete="CASCADE"), nullable=False)
-    user_id = Column(String(36), ForeignKey("shared.users.id", ondelete="CASCADE"), nullable=False)
-    role = Column(String(50), default=UserRole.TENANT_USER)
+    tenant_id = Column(String(36), ForeignKey("shared.central_tenants.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(String(36), ForeignKey("shared.central_users.id", ondelete="CASCADE"), nullable=False)
+    role = Column(String(50), default=UserRole.TENANT_ADMIN)
     is_owner = Column(Boolean, default=False)
     permissions = Column(JSONB, default={})
     joined_at = Column(DateTime(timezone=True), default=datetime.utcnow)
-    invited_by = Column(String(36), ForeignKey("shared.users.id"))
+    invited_by = Column(String(36), ForeignKey("shared.central_users.id"))
     invitation_token = Column(String(255))
     invitation_accepted_at = Column(DateTime(timezone=True))
     last_active_at = Column(DateTime(timezone=True))
 
 class SubscriptionHistory(Base):
-    __tablename__ = "subscription_history"
+    __tablename__ = "central_subscription_history"
     __table_args__ = {"schema": "shared"}
 
     id = Column(String(36), primary_key=True)
-    tenant_id = Column(String(36), ForeignKey("shared.tenants.id", ondelete="CASCADE"), nullable=False)
+    tenant_id = Column(String(36), ForeignKey("shared.central_tenants.id", ondelete="CASCADE"), nullable=False)
     plan_from = Column(String(50))
     plan_to = Column(String(50), nullable=False)
     change_type = Column(String(50), nullable=False)
@@ -101,11 +99,11 @@ class SubscriptionHistory(Base):
     payment_method = Column(String(50))
     transaction_id = Column(String(255))
     changed_at = Column(DateTime(timezone=True), default=datetime.utcnow)
-    changed_by = Column(String(36), ForeignKey("shared.users.id"))
+    changed_by = Column(String(36), ForeignKey("shared.central_users.id"))
     notes = Column(Text)
 
 class FeatureFlag(Base):
-    __tablename__ = "feature_flags"
+    __tablename__ = "central_feature_flags"
     __table_args__ = {"schema": "shared"}
 
     id = Column(String(36), primary_key=True)
@@ -118,24 +116,24 @@ class FeatureFlag(Base):
     updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
 
 class TenantFeature(Base):
-    __tablename__ = "tenant_features"
+    __tablename__ = "central_tenant_features"
     __table_args__ = {"schema": "shared"}
 
     id = Column(String(36), primary_key=True)
-    tenant_id = Column(String(36), ForeignKey("shared.tenants.id", ondelete="CASCADE"), nullable=False)
-    feature_id = Column(String(36), ForeignKey("shared.feature_flags.id", ondelete="CASCADE"), nullable=False)
+    tenant_id = Column(String(36), ForeignKey("shared.central_tenants.id", ondelete="CASCADE"), nullable=False)
+    feature_id = Column(String(36), ForeignKey("shared.central_feature_flags.id", ondelete="CASCADE"), nullable=False)
     is_enabled = Column(Boolean, nullable=False)
     configuration = Column(JSONB, default={})
     enabled_at = Column(DateTime(timezone=True), default=datetime.utcnow)
-    enabled_by = Column(String(36), ForeignKey("shared.users.id"))
+    enabled_by = Column(String(36), ForeignKey("shared.central_users.id"))
 
 class AuditLog(Base):
-    __tablename__ = "audit_logs"
+    __tablename__ = "central_audit_logs"
     __table_args__ = {"schema": "shared"}
 
     id = Column(String(36), primary_key=True)
-    tenant_id = Column(String(36), ForeignKey("shared.tenants.id", ondelete="SET NULL"))
-    user_id = Column(String(36), ForeignKey("shared.users.id", ondelete="SET NULL"))
+    tenant_id = Column(String(36), ForeignKey("shared.central_tenants.id", ondelete="SET NULL"))
+    user_id = Column(String(36), ForeignKey("shared.central_users.id", ondelete="SET NULL"))
     action = Column(String(100), nullable=False)
     resource_type = Column(String(100))
     resource_id = Column(String(255))

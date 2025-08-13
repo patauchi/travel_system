@@ -11,7 +11,7 @@ from datetime import datetime, date
 from uuid import UUID
 import logging
 
-from database import get_tenant_db
+from dependencies import get_tenant_db_session
 from models_extended import (
     Note, LogCall, Task, Attachment, Event,
     CarbonFootprint, ChannelConfig, Review
@@ -49,7 +49,7 @@ async def create_note(
     tenant_slug: str,
     note_data: NoteCreate,
     current_user: dict = Depends(get_current_user),
-    db: Session = Depends(get_tenant_db)
+    db: Session = Depends(get_tenant_db_session)
 ):
     """Create a new note"""
     verify_tenant_access(tenant_slug, current_user)
@@ -75,7 +75,7 @@ async def list_notes(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
     current_user: dict = Depends(get_current_user),
-    db: Session = Depends(get_tenant_db)
+    db: Session = Depends(get_tenant_db_session)
 ):
     """List notes with optional filters"""
     verify_tenant_access(tenant_slug, current_user)
@@ -99,7 +99,7 @@ async def get_note(
     tenant_slug: str,
     note_id: int,
     current_user: dict = Depends(get_current_user),
-    db: Session = Depends(get_tenant_db)
+    db: Session = Depends(get_tenant_db_session)
 ):
     """Get a specific note"""
     verify_tenant_access(tenant_slug, current_user)
@@ -116,7 +116,7 @@ async def update_note(
     note_id: int,
     note_update: NoteUpdate,
     current_user: dict = Depends(get_current_user),
-    db: Session = Depends(get_tenant_db)
+    db: Session = Depends(get_tenant_db_session)
 ):
     """Update a note"""
     verify_tenant_access(tenant_slug, current_user)
@@ -139,7 +139,7 @@ async def delete_note(
     tenant_slug: str,
     note_id: int,
     current_user: dict = Depends(get_current_user),
-    db: Session = Depends(get_tenant_db)
+    db: Session = Depends(get_tenant_db_session)
 ):
     """Delete a note"""
     verify_tenant_access(tenant_slug, current_user)
@@ -160,7 +160,7 @@ async def create_task(
     tenant_slug: str,
     task_data: TaskCreate,
     current_user: dict = Depends(get_current_user),
-    db: Session = Depends(get_tenant_db)
+    db: Session = Depends(get_tenant_db_session)
 ):
     """Create a new task"""
     verify_tenant_access(tenant_slug, current_user)
@@ -188,7 +188,7 @@ async def list_tasks(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
     current_user: dict = Depends(get_current_user),
-    db: Session = Depends(get_tenant_db)
+    db: Session = Depends(get_tenant_db_session)
 ):
     """List tasks with optional filters"""
     verify_tenant_access(tenant_slug, current_user)
@@ -216,7 +216,7 @@ async def get_task(
     tenant_slug: str,
     task_id: UUID,
     current_user: dict = Depends(get_current_user),
-    db: Session = Depends(get_tenant_db)
+    db: Session = Depends(get_tenant_db_session)
 ):
     """Get a specific task"""
     verify_tenant_access(tenant_slug, current_user)
@@ -237,7 +237,7 @@ async def update_task(
     task_id: UUID,
     task_update: TaskUpdate,
     current_user: dict = Depends(get_current_user),
-    db: Session = Depends(get_tenant_db)
+    db: Session = Depends(get_tenant_db_session)
 ):
     """Update a task"""
     verify_tenant_access(tenant_slug, current_user)
@@ -268,7 +268,7 @@ async def delete_task(
     tenant_slug: str,
     task_id: UUID,
     current_user: dict = Depends(get_current_user),
-    db: Session = Depends(get_tenant_db)
+    db: Session = Depends(get_tenant_db_session)
 ):
     """Soft delete a task"""
     verify_tenant_access(tenant_slug, current_user)
@@ -293,7 +293,7 @@ async def create_event(
     tenant_slug: str,
     event_data: EventCreate,
     current_user: dict = Depends(get_current_user),
-    db: Session = Depends(get_tenant_db)
+    db: Session = Depends(get_tenant_db_session)
 ):
     """Create a new event"""
     verify_tenant_access(tenant_slug, current_user)
@@ -321,7 +321,7 @@ async def list_events(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
     current_user: dict = Depends(get_current_user),
-    db: Session = Depends(get_tenant_db)
+    db: Session = Depends(get_tenant_db_session)
 ):
     """List events with optional filters"""
     verify_tenant_access(tenant_slug, current_user)
@@ -349,7 +349,7 @@ async def get_event(
     tenant_slug: str,
     event_id: int,
     current_user: dict = Depends(get_current_user),
-    db: Session = Depends(get_tenant_db)
+    db: Session = Depends(get_tenant_db_session)
 ):
     """Get a specific event"""
     verify_tenant_access(tenant_slug, current_user)
@@ -370,7 +370,7 @@ async def update_event(
     event_id: int,
     event_update: EventUpdate,
     current_user: dict = Depends(get_current_user),
-    db: Session = Depends(get_tenant_db)
+    db: Session = Depends(get_tenant_db_session)
 ):
     """Update an event"""
     verify_tenant_access(tenant_slug, current_user)
@@ -397,7 +397,7 @@ async def delete_event(
     tenant_slug: str,
     event_id: int,
     current_user: dict = Depends(get_current_user),
-    db: Session = Depends(get_tenant_db)
+    db: Session = Depends(get_tenant_db_session)
 ):
     """Soft delete an event"""
     verify_tenant_access(tenant_slug, current_user)
@@ -422,7 +422,7 @@ async def create_log_call(
     tenant_slug: str,
     call_data: LogCallCreate,
     current_user: dict = Depends(get_current_user),
-    db: Session = Depends(get_tenant_db)
+    db: Session = Depends(get_tenant_db_session)
 ):
     """Log a new call"""
     verify_tenant_access(tenant_slug, current_user)
@@ -450,7 +450,7 @@ async def list_log_calls(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
     current_user: dict = Depends(get_current_user),
-    db: Session = Depends(get_tenant_db)
+    db: Session = Depends(get_tenant_db_session)
 ):
     """List call logs with optional filters"""
     verify_tenant_access(tenant_slug, current_user)
@@ -478,7 +478,7 @@ async def get_log_call(
     tenant_slug: str,
     call_id: int,
     current_user: dict = Depends(get_current_user),
-    db: Session = Depends(get_tenant_db)
+    db: Session = Depends(get_tenant_db_session)
 ):
     """Get a specific call log"""
     verify_tenant_access(tenant_slug, current_user)
@@ -499,7 +499,7 @@ async def update_log_call(
     call_id: int,
     call_update: LogCallUpdate,
     current_user: dict = Depends(get_current_user),
-    db: Session = Depends(get_tenant_db)
+    db: Session = Depends(get_tenant_db_session)
 ):
     """Update a call log"""
     verify_tenant_access(tenant_slug, current_user)
@@ -526,7 +526,7 @@ async def delete_log_call(
     tenant_slug: str,
     call_id: int,
     current_user: dict = Depends(get_current_user),
-    db: Session = Depends(get_tenant_db)
+    db: Session = Depends(get_tenant_db_session)
 ):
     """Soft delete a call log"""
     verify_tenant_access(tenant_slug, current_user)
@@ -555,7 +555,7 @@ async def create_attachment(
     description: Optional[str] = None,
     is_public: bool = False,
     current_user: dict = Depends(get_current_user),
-    db: Session = Depends(get_tenant_db)
+    db: Session = Depends(get_tenant_db_session)
 ):
     """Upload a new attachment"""
     verify_tenant_access(tenant_slug, current_user)
@@ -591,7 +591,7 @@ async def list_attachments(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
     current_user: dict = Depends(get_current_user),
-    db: Session = Depends(get_tenant_db)
+    db: Session = Depends(get_tenant_db_session)
 ):
     """List attachments with optional filters"""
     verify_tenant_access(tenant_slug, current_user)
@@ -615,7 +615,7 @@ async def get_attachment(
     tenant_slug: str,
     attachment_id: int,
     current_user: dict = Depends(get_current_user),
-    db: Session = Depends(get_tenant_db)
+    db: Session = Depends(get_tenant_db_session)
 ):
     """Get attachment metadata"""
     verify_tenant_access(tenant_slug, current_user)
@@ -635,7 +635,7 @@ async def delete_attachment(
     tenant_slug: str,
     attachment_id: int,
     current_user: dict = Depends(get_current_user),
-    db: Session = Depends(get_tenant_db)
+    db: Session = Depends(get_tenant_db_session)
 ):
     """Soft delete an attachment"""
     verify_tenant_access(tenant_slug, current_user)
@@ -662,7 +662,7 @@ async def create_channel_config(
     tenant_slug: str,
     config_data: ChannelConfigCreate,
     current_user: dict = Depends(get_current_user),
-    db: Session = Depends(get_tenant_db)
+    db: Session = Depends(get_tenant_db_session)
 ):
     """Create a new channel configuration"""
     verify_tenant_access(tenant_slug, current_user)
@@ -684,7 +684,7 @@ async def list_channel_configs(
     channel: Optional[str] = None,
     is_active: Optional[bool] = None,
     current_user: dict = Depends(get_current_user),
-    db: Session = Depends(get_tenant_db)
+    db: Session = Depends(get_tenant_db_session)
 ):
     """List channel configurations"""
     verify_tenant_access(tenant_slug, current_user)
@@ -704,7 +704,7 @@ async def get_channel_config(
     tenant_slug: str,
     config_id: int,
     current_user: dict = Depends(get_current_user),
-    db: Session = Depends(get_tenant_db)
+    db: Session = Depends(get_tenant_db_session)
 ):
     """Get a specific channel configuration"""
     verify_tenant_access(tenant_slug, current_user)
@@ -722,7 +722,7 @@ async def update_channel_config(
     config_id: int,
     config_update: ChannelConfigUpdate,
     current_user: dict = Depends(get_current_user),
-    db: Session = Depends(get_tenant_db)
+    db: Session = Depends(get_tenant_db_session)
 ):
     """Update a channel configuration"""
     verify_tenant_access(tenant_slug, current_user)
@@ -746,7 +746,7 @@ async def delete_channel_config(
     tenant_slug: str,
     config_id: int,
     current_user: dict = Depends(get_current_user),
-    db: Session = Depends(get_tenant_db)
+    db: Session = Depends(get_tenant_db_session)
 ):
     """Delete a channel configuration"""
     verify_tenant_access(tenant_slug, current_user)

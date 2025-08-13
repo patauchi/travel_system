@@ -26,7 +26,7 @@ class SubscriptionPlan(str, enum.Enum):
 
 # Models
 class User(Base):
-    __tablename__ = "users"
+    __tablename__ = "central_users"
     __table_args__ = {"schema": "shared"}
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -71,7 +71,7 @@ class User(Base):
         }
 
 class Tenant(Base):
-    __tablename__ = "tenants"
+    __tablename__ = "central_tenants"
     __table_args__ = {"schema": "shared"}
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -120,11 +120,11 @@ class Tenant(Base):
         }
 
 class ApiKey(Base):
-    __tablename__ = "api_keys"
+    __tablename__ = "central_api_keys"
     __table_args__ = {"schema": "shared"}
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    tenant_id = Column(UUID(as_uuid=True), ForeignKey("shared.tenants.id", ondelete="CASCADE"), nullable=False)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("shared.central_tenants.id", ondelete="CASCADE"), nullable=False)
     name = Column(String(255), nullable=False)
     key_hash = Column(String(255), nullable=False)
     key_prefix = Column(String(10), nullable=False, index=True)
@@ -132,7 +132,7 @@ class ApiKey(Base):
     rate_limit = Column(Integer, default=1000)
     expires_at = Column(DateTime(timezone=True))
     last_used_at = Column(DateTime(timezone=True))
-    created_by_id = Column(UUID(as_uuid=True), ForeignKey("shared.users.id"))
+    created_by_id = Column(UUID(as_uuid=True), ForeignKey("shared.central_users.id"))
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
     revoked_at = Column(DateTime(timezone=True))
 
@@ -144,12 +144,12 @@ class ApiKey(Base):
         return f"<ApiKey {self.name} for {self.tenant_id}>"
 
 class AuditLog(Base):
-    __tablename__ = "audit_logs"
+    __tablename__ = "central_audit_logs"
     __table_args__ = {"schema": "shared"}
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    tenant_id = Column(UUID(as_uuid=True), ForeignKey("shared.tenants.id", ondelete="SET NULL"))
-    user_id = Column(UUID(as_uuid=True), ForeignKey("shared.users.id", ondelete="SET NULL"))
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("shared.central_tenants.id", ondelete="SET NULL"))
+    user_id = Column(UUID(as_uuid=True), ForeignKey("shared.central_users.id", ondelete="SET NULL"))
     action = Column(String(100), nullable=False)
     resource_type = Column(String(100))
     resource_id = Column(String(255))
@@ -166,7 +166,7 @@ class AuditLog(Base):
         return f"<AuditLog {self.action} by {self.user_id}>"
 
 class FeatureFlag(Base):
-    __tablename__ = "feature_flags"
+    __tablename__ = "central_feature_flags"
     __table_args__ = {"schema": "shared"}
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -185,16 +185,16 @@ class FeatureFlag(Base):
         return f"<FeatureFlag {self.name}>"
 
 class TenantFeature(Base):
-    __tablename__ = "tenant_features"
+    __tablename__ = "central_tenant_features"
     __table_args__ = {"schema": "shared"}
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    tenant_id = Column(UUID(as_uuid=True), ForeignKey("shared.tenants.id", ondelete="CASCADE"), nullable=False)
-    feature_id = Column(UUID(as_uuid=True), ForeignKey("shared.feature_flags.id", ondelete="CASCADE"), nullable=False)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("shared.central_tenants.id", ondelete="CASCADE"), nullable=False)
+    feature_id = Column(UUID(as_uuid=True), ForeignKey("shared.central_feature_flags.id", ondelete="CASCADE"), nullable=False)
     is_enabled = Column(Boolean, nullable=False)
     configuration = Column(JSONB, default={})
     enabled_at = Column(DateTime(timezone=True), default=datetime.utcnow)
-    enabled_by = Column(UUID(as_uuid=True), ForeignKey("shared.users.id"))
+    enabled_by = Column(UUID(as_uuid=True), ForeignKey("shared.central_users.id"))
 
     # Relationships
     tenant = relationship("Tenant", back_populates="feature_flags")
@@ -205,11 +205,11 @@ class TenantFeature(Base):
         return f"<TenantFeature {self.feature_id} for {self.tenant_id}>"
 
 class SubscriptionHistory(Base):
-    __tablename__ = "subscription_history"
+    __tablename__ = "central_subscription_history"
     __table_args__ = {"schema": "shared"}
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    tenant_id = Column(UUID(as_uuid=True), ForeignKey("shared.tenants.id", ondelete="CASCADE"), nullable=False)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("shared.central_tenants.id", ondelete="CASCADE"), nullable=False)
     plan_from = Column(SQLEnum(SubscriptionPlan))
     plan_to = Column(SQLEnum(SubscriptionPlan), nullable=False)
     change_type = Column(String(50), nullable=False)  # upgrade, downgrade, renewal, cancellation
@@ -218,7 +218,7 @@ class SubscriptionHistory(Base):
     payment_method = Column(String(50))
     transaction_id = Column(String(255))
     changed_at = Column(DateTime(timezone=True), default=datetime.utcnow)
-    changed_by = Column(UUID(as_uuid=True), ForeignKey("shared.users.id"))
+    changed_by = Column(UUID(as_uuid=True), ForeignKey("shared.central_users.id"))
     notes = Column(Text)
 
     # Relationships
@@ -229,11 +229,11 @@ class SubscriptionHistory(Base):
         return f"<SubscriptionHistory {self.tenant_id} {self.change_type}>"
 
 class Webhook(Base):
-    __tablename__ = "webhooks"
+    __tablename__ = "central_webhooks"
     __table_args__ = {"schema": "shared"}
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    tenant_id = Column(UUID(as_uuid=True), ForeignKey("shared.tenants.id", ondelete="CASCADE"), nullable=False)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("shared.central_tenants.id", ondelete="CASCADE"), nullable=False)
     name = Column(String(255), nullable=False)
     url = Column(Text, nullable=False)
     events = Column(JSONB, nullable=False, default=[])
@@ -254,11 +254,11 @@ class Webhook(Base):
         return f"<Webhook {self.name} for {self.tenant_id}>"
 
 class WebhookLog(Base):
-    __tablename__ = "webhook_logs"
+    __tablename__ = "central_webhook_logs"
     __table_args__ = {"schema": "shared"}
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    webhook_id = Column(UUID(as_uuid=True), ForeignKey("shared.webhooks.id", ondelete="CASCADE"), nullable=False)
+    webhook_id = Column(UUID(as_uuid=True), ForeignKey("shared.central_webhooks.id", ondelete="CASCADE"), nullable=False)
     event_type = Column(String(100), nullable=False)
     payload = Column(JSONB, nullable=False)
     response_status = Column(Integer)
@@ -276,7 +276,7 @@ class WebhookLog(Base):
         return f"<WebhookLog {self.event_type} for {self.webhook_id}>"
 
 class SystemSetting(Base):
-    __tablename__ = "system_settings"
+    __tablename__ = "central_system_settings"
     __table_args__ = {"schema": "shared"}
 
     key = Column(String(100), primary_key=True)
@@ -284,7 +284,7 @@ class SystemSetting(Base):
     description = Column(Text)
     is_public = Column(Boolean, default=False)
     updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
-    updated_by = Column(UUID(as_uuid=True), ForeignKey("shared.users.id"))
+    updated_by = Column(UUID(as_uuid=True), ForeignKey("shared.central_users.id"))
 
     # Relationships
     updater = relationship("User")

@@ -20,7 +20,8 @@ import json
 import uuid
 from pydantic import BaseModel, EmailStr, Field, validator
 
-from database import get_db, engine, Base, get_tenant_db
+from database import get_db, engine, Base
+from dependencies import get_tenant_db_session, verify_tenant_schema
 from models import User, Role, Permission, Setting, Team, UserSession, AuditLog
 from schemas import (
     UserCreate, UserUpdate, UserResponse,
@@ -321,7 +322,7 @@ async def create_user(
     tenant_slug: str,
     user_data: UserCreate,
     current_user: dict = Depends(verify_token),
-    db: Session = Depends(get_db)
+    tenant_db: Session = Depends(get_tenant_db_session)
 ):
     """Create a new user in the tenant"""
     # Check permission
@@ -330,9 +331,6 @@ async def create_user(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Insufficient permissions"
         )
-
-    # Get tenant database
-    tenant_db = get_tenant_db(tenant_slug)
 
     # Check if user already exists
     existing_user = tenant_db.query(User).filter(
@@ -355,7 +353,7 @@ async def create_user(
         last_name=user_data.last_name,
         full_name=f"{user_data.first_name} {user_data.last_name}",
         department=user_data.department,
-        job_title=user_data.job_title,
+        title=user_data.title,
         created_by=uuid.UUID(current_user["sub"])
     )
 
@@ -387,18 +385,15 @@ async def list_users(
     skip: int = 0,
     limit: int = 100,
     current_user: dict = Depends(verify_token),
-    db: Session = Depends(get_db)
+    tenant_db: Session = Depends(get_tenant_db_session)
 ):
     """List all users in the tenant"""
     # Check permission
-    if not check_user_permission(current_user, "users.read"):
+    if not check_user_permission(current_user, "users.view"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Insufficient permissions"
         )
-
-    # Get tenant database
-    tenant_db = get_tenant_db(tenant_slug)
 
     # Query users
     users = tenant_db.query(User).filter(
@@ -410,20 +405,17 @@ async def list_users(
 @app.get("/api/v1/tenants/{tenant_slug}/users/{user_id}", response_model=UserResponse)
 async def get_user(
     tenant_slug: str,
-    user_id: str,
+    user_id: uuid.UUID,
     current_user: dict = Depends(verify_token),
-    db: Session = Depends(get_db)
+    tenant_db: Session = Depends(get_tenant_db_session)
 ):
-    """Get a specific user"""
+    """Get a specific user by ID"""
     # Check permission
-    if not check_user_permission(current_user, "users.read"):
+    if not check_user_permission(current_user, "users.view"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Insufficient permissions"
         )
-
-    # Get tenant database
-    tenant_db = get_tenant_db(tenant_slug)
 
     # Get user
     user = tenant_db.query(User).filter(
@@ -442,21 +434,18 @@ async def get_user(
 @app.put("/api/v1/tenants/{tenant_slug}/users/{user_id}", response_model=UserResponse)
 async def update_user(
     tenant_slug: str,
-    user_id: str,
-    user_data: UserUpdate,
+    user_id: uuid.UUID,
+    user_update: UserUpdate,
     current_user: dict = Depends(verify_token),
-    db: Session = Depends(get_db)
+    tenant_db: Session = Depends(get_tenant_db_session)
 ):
-    """Update a user"""
+    """Update user information"""
     # Check permission
     if not check_user_permission(current_user, "users.update"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Insufficient permissions"
         )
-
-    # Get tenant database
-    tenant_db = get_tenant_db(tenant_slug)
 
     # Get user
     user = tenant_db.query(User).filter(
@@ -495,20 +484,17 @@ async def update_user(
 @app.delete("/api/v1/tenants/{tenant_slug}/users/{user_id}")
 async def delete_user(
     tenant_slug: str,
-    user_id: str,
+    user_id: uuid.UUID,
     current_user: dict = Depends(verify_token),
-    db: Session = Depends(get_db)
+    tenant_db: Session = Depends(get_tenant_db_session)
 ):
-    """Soft delete a user"""
+    """Delete a user"""
     # Check permission
     if not check_user_permission(current_user, "users.delete"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Insufficient permissions"
         )
-
-    # Get tenant database
-    tenant_db = get_tenant_db(tenant_slug)
 
     # Get user
     user = tenant_db.query(User).filter(
@@ -549,18 +535,15 @@ async def delete_user(
 async def list_roles(
     tenant_slug: str,
     current_user: dict = Depends(verify_token),
-    db: Session = Depends(get_db)
+    tenant_db: Session = Depends(get_tenant_db_session)
 ):
     """List all roles in the tenant"""
     # Check permission
-    if not check_user_permission(current_user, "roles.read"):
+    if not check_user_permission(current_user, "roles.view"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Insufficient permissions"
         )
-
-    # Get tenant database
-    tenant_db = get_tenant_db(tenant_slug)
 
     # Query roles
     roles = tenant_db.query(Role).filter(Role.is_active == True).all()
@@ -572,7 +555,7 @@ async def create_role(
     tenant_slug: str,
     role_data: RoleCreate,
     current_user: dict = Depends(verify_token),
-    db: Session = Depends(get_db)
+    tenant_db: Session = Depends(get_tenant_db_session)
 ):
     """Create a new role"""
     # Check permission
@@ -581,9 +564,6 @@ async def create_role(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Insufficient permissions"
         )
-
-    # Get tenant database
-    tenant_db = get_tenant_db(tenant_slug)
 
     # Check if role already exists
     existing_role = tenant_db.query(Role).filter(Role.name == role_data.name).first()
@@ -635,21 +615,17 @@ async def list_settings(
     tenant_slug: str,
     category: Optional[str] = None,
     current_user: dict = Depends(verify_token),
-    db: Session = Depends(get_db)
+    tenant_db: Session = Depends(get_tenant_db_session)
 ):
-    """List tenant settings"""
-    # Get tenant database
-    tenant_db = get_tenant_db(tenant_slug)
-
+    """List all settings or settings in a specific category"""
     # Query settings
     query = tenant_db.query(Setting)
 
-    # Filter by category if provided
     if category:
         query = query.filter(Setting.category == category)
 
     # Filter based on permissions
-    if not check_user_permission(current_user, "settings.read"):
+    if not check_user_permission(current_user, "settings.view"):
         # Only show public settings
         query = query.filter(Setting.is_public == True)
 
@@ -660,10 +636,10 @@ async def list_settings(
 @app.put("/api/v1/tenants/{tenant_slug}/settings/{setting_id}", response_model=SettingResponse)
 async def update_setting(
     tenant_slug: str,
-    setting_id: str,
+    setting_id: uuid.UUID,
     setting_data: SettingUpdate,
     current_user: dict = Depends(verify_token),
-    db: Session = Depends(get_db)
+    tenant_db: Session = Depends(get_tenant_db_session)
 ):
     """Update a tenant setting"""
     # Check permission
@@ -672,9 +648,6 @@ async def update_setting(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Insufficient permissions"
         )
-
-    # Get tenant database
-    tenant_db = get_tenant_db(tenant_slug)
 
     # Get setting
     setting = tenant_db.query(Setting).filter(Setting.id == setting_id).first()

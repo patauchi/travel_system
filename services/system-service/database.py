@@ -123,6 +123,33 @@ def get_tenant_db(tenant_slug: str) -> Session:
     return TenantSession()
 
 
+def get_tenant_db_dependency(tenant_slug: str):
+    """
+    FastAPI dependency to get tenant database session
+    Properly handles session lifecycle with cleanup
+
+    Args:
+        tenant_slug: The slug of the tenant from path parameter
+
+    Yields:
+        Database session for the tenant's schema
+    """
+    # Convert tenant slug to schema name
+    schema_name = f"tenant_{tenant_slug.replace('-', '_')}"
+
+    # Get session factory for this tenant
+    TenantSession = get_tenant_session_factory(schema_name)
+
+    # Create new session
+    db = TenantSession()
+    try:
+        # Set the search path explicitly for this session
+        db.execute(text(f"SET search_path TO {schema_name}, public"))
+        yield db
+    finally:
+        db.close()
+
+
 @contextmanager
 def tenant_db_context(tenant_slug: str):
     """

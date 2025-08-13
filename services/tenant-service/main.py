@@ -1,6 +1,7 @@
 from fastapi import FastAPI, Depends, HTTPException, status, Request, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
 from pydantic import BaseModel, EmailStr, Field, validator
@@ -157,8 +158,9 @@ async def health_check():
 async def create_tenant_endpoint_v2(
     tenant_data: TenantCreateV2,
     background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db)
-):
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_super_admin)
+) -> Dict[str, Any]:
     """Create a new tenant with proper architecture (V2)"""
     return await create_tenant_v2(tenant_data, background_tasks, db)
 
@@ -166,7 +168,8 @@ async def create_tenant_endpoint_v2(
 async def create_tenant(
     tenant_data: TenantCreate,
     background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_super_admin)
 ):
     """Create a new tenant with owner user (DEPRECATED - Use /v2)"""
 
@@ -331,6 +334,62 @@ async def create_tenant(
             joined_at=datetime.utcnow()
         )
         db.add(tenant_user)
+
+        # Automatically sync owner to tenant schema
+        try:
+            logger.info(f"Syncing owner user to tenant schema {schema_name}")
+
+            # Create user in tenant schema
+            with engine.connect() as conn:
+                # Create 3 basic roles in tenant schema
+                conn.execute(text(f"""
+                    INSERT INTO {schema_name}.roles (id, name, display_name, description, is_system, is_active, created_at, updated_at)
+                    VALUES
+                        (gen_random_uuid(), 'admin', 'Administrator', 'Full access to tenant resources', true, true, NOW(), NOW()),
+                        (gen_random_uuid(), 'manager', 'Manager', 'Management level access', true, true, NOW(), NOW()),
+                        (gen_random_uuid(), 'user', 'User', 'Standard user access', true, true, NOW(), NOW())
+                    ON CONFLICT (name) DO NOTHING
+                """))
+
+                # Insert owner user into tenant schema
+                conn.execute(text(f"""
+                    INSERT INTO {schema_name}.users (
+                        id, email, username, password_hash,
+                        first_name, last_name,
+                        status, is_active, is_verified,
+                        email_verified_at,
+                        created_at, updated_at
+                    ) VALUES (
+                        :id, :email, :username, :password_hash,
+                        :first_name, :last_name,
+                        'active', true, true,
+                        CURRENT_TIMESTAMP,
+                        CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                    )
+                """), {
+                    'id': owner_user.id,
+                    'email': owner_user.email,
+                    'username': owner_user.username,
+                    'password_hash': owner_user.password_hash,
+                    'first_name': owner_user.first_name,
+                    'last_name': owner_user.last_name
+                })
+
+                # Assign admin role to owner
+                conn.execute(text(f"""
+                    INSERT INTO {schema_name}.user_roles (user_id, role_id, assigned_at, assigned_by)
+                    SELECT :user_id, id, CURRENT_TIMESTAMP, :user_id
+                    FROM {schema_name}.roles
+                    WHERE name = 'admin'
+                    LIMIT 1
+                """), {'user_id': owner_user.id})
+
+                conn.commit()
+                logger.info(f"Successfully synced owner {owner_user.username} to tenant schema {schema_name}")
+
+        except Exception as sync_error:
+            logger.error(f"Failed to sync owner to tenant schema: {str(sync_error)}")
+            # Continue anyway - the fix script can be run later
 
         # Create subscription history
         subscription_history = SubscriptionHistory(

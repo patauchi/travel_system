@@ -20,13 +20,13 @@ class UserBase(BaseModel):
     first_name: Optional[str] = Field(None, max_length=100)
     last_name: Optional[str] = Field(None, max_length=100)
     phone: Optional[str] = Field(None, max_length=50)
-    mobile: Optional[str] = Field(None, max_length=50)
+    phone_secondary: Optional[str] = Field(None, max_length=50)
     department: Optional[str] = Field(None, max_length=100)
-    job_title: Optional[str] = Field(None, max_length=100)
+    title: Optional[str] = Field(None, max_length=100)
     employee_id: Optional[str] = Field(None, max_length=50)
-    location: Optional[str] = Field(None, max_length=100)
     timezone: str = Field(default="UTC", max_length=50)
     language: str = Field(default="en", max_length=10)
+    currency: str = Field(default="USD", max_length=3)
 
     @validator('username')
     def validate_username(cls, v):
@@ -34,7 +34,7 @@ class UserBase(BaseModel):
             raise ValueError('Username can only contain letters, numbers, dots, hyphens and underscores')
         return v
 
-    @validator('phone', 'mobile')
+    @validator('phone', 'phone_secondary')
     def validate_phone(cls, v):
         if v and not re.match(r'^[\+\d\s\-\(\)]+$', v):
             raise ValueError('Invalid phone number format')
@@ -73,13 +73,13 @@ class UserUpdate(BaseModel):
     first_name: Optional[str] = Field(None, max_length=100)
     last_name: Optional[str] = Field(None, max_length=100)
     phone: Optional[str] = Field(None, max_length=50)
-    mobile: Optional[str] = Field(None, max_length=50)
+    phone_secondary: Optional[str] = Field(None, max_length=50)
     department: Optional[str] = Field(None, max_length=100)
-    job_title: Optional[str] = Field(None, max_length=100)
+    title: Optional[str] = Field(None, max_length=100)
     employee_id: Optional[str] = Field(None, max_length=50)
-    location: Optional[str] = Field(None, max_length=100)
     timezone: Optional[str] = Field(None, max_length=50)
     language: Optional[str] = Field(None, max_length=10)
+    currency: Optional[str] = Field(None, max_length=3)
     is_active: Optional[bool] = None
     role_ids: Optional[List[UUID]] = None
     team_ids: Optional[List[UUID]] = None
@@ -93,14 +93,15 @@ class UserResponse(BaseModel):
     last_name: Optional[str]
     full_name: Optional[str]
     phone: Optional[str]
-    mobile: Optional[str]
+    phone_secondary: Optional[str]
     avatar_url: Optional[str]
+    bio: Optional[str]
     department: Optional[str]
-    job_title: Optional[str]
+    title: Optional[str]
     employee_id: Optional[str]
-    location: Optional[str]
     timezone: str
     language: str
+    currency: str
     status: str
     is_active: bool
     is_verified: bool
