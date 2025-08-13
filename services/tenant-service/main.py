@@ -171,10 +171,13 @@ async def create_tenant(
     """Create a new tenant with owner user (DEPRECATED - Use /v2)"""
 
     # Check if tenant slug already exists
-    existing_tenant = db.query(Tenant).filter(
-        (Tenant.slug == tenant_data.slug) |
-        (Tenant.subdomain == tenant_data.subdomain)
-    ).first()
+    # Only check subdomain if it's not None
+    filters = [Tenant.slug == tenant_data.slug]
+    if tenant_data.subdomain is not None:
+        filters.append(Tenant.subdomain == tenant_data.subdomain)
+
+    from sqlalchemy import or_
+    existing_tenant = db.query(Tenant).filter(or_(*filters)).first()
 
     if existing_tenant:
         raise HTTPException(
