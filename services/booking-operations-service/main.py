@@ -1,6 +1,6 @@
 """
 Booking Operations Service Main Application
-FastAPI application for Booking Operations Management
+FastAPI application for Booking Operations Management - Modular Architecture
 """
 
 import os
@@ -17,7 +17,21 @@ import uvicorn
 from database import get_db, get_tenant_db, cleanup_engines, get_schema_from_tenant_id
 from schema_manager import SchemaManager
 from sqlalchemy.orm import Session
-from endpoints_bookings import router as bookings_router
+
+# Import shared authentication
+from shared_auth import get_current_user, check_tenant_slug_access
+
+# Import modular routers
+from countries.endpoints import router as countries_router
+from destinations.endpoints import router as destinations_router
+from suppliers.endpoints import router as suppliers_router
+from services.endpoints import router as services_router
+from specialized_services.endpoints import router as specialized_services_router
+from cancellation_policies.endpoints import router as cancellation_policies_router
+from bookings.endpoints import router as bookings_router
+from service_operations.endpoints import router as service_operations_router
+from rates.endpoints import router as rates_router
+from passengers.endpoints import router as passengers_router
 
 # Configure logging
 logging.basicConfig(
@@ -64,8 +78,8 @@ async def lifespan(app: FastAPI):
 # Create FastAPI app
 app = FastAPI(
     title="Booking Operations Service",
-    description="Booking Operations Management Service for Multi-tenant Platform",
-    version="1.0.0",
+    description="Booking Operations Management Service for Multi-tenant Platform - Modular Architecture",
+    version="2.0.0",
     lifespan=lifespan
 )
 
@@ -78,12 +92,76 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include routers
+# ============================================
+# INCLUDE MODULAR ROUTERS
+# ============================================
+
+# Geographic and Reference Data
+app.include_router(
+    countries_router,
+    prefix="/api/v1",
+    tags=["Countries"]
+)
+
+app.include_router(
+    destinations_router,
+    prefix="/api/v1",
+    tags=["Destinations"]
+)
+
+# Supplier Management
+app.include_router(
+    suppliers_router,
+    prefix="/api/v1",
+    tags=["Suppliers"]
+)
+
+# Service Management
+app.include_router(
+    services_router,
+    prefix="/api/v1",
+    tags=["Services"]
+)
+
+app.include_router(
+    specialized_services_router,
+    prefix="/api/v1",
+    tags=["Specialized Services"]
+)
+
+# Policies and Rates
+app.include_router(
+    cancellation_policies_router,
+    prefix="/api/v1",
+    tags=["Cancellation Policies"]
+)
+
+app.include_router(
+    rates_router,
+    prefix="/api/v1",
+    tags=["Rates"]
+)
+
+# Booking Management
 app.include_router(
     bookings_router,
     prefix="/api/v1",
-    tags=["bookings"]
+    tags=["Bookings"]
 )
+
+app.include_router(
+    service_operations_router,
+    prefix="/api/v1",
+    tags=["Service Operations"]
+)
+
+# Passenger Management
+app.include_router(
+    passengers_router,
+    prefix="/api/v1",
+    tags=["Passengers"]
+)
+
 
 
 # ============================================
@@ -96,7 +174,69 @@ async def health_check():
     return {
         "status": "healthy",
         "service": "booking-operations-service",
-        "version": "1.0.0",
+        "version": "2.0.0",
+        "architecture": "modular",
+        "timestamp": datetime.utcnow().isoformat(),
+        "modules": [
+            "countries",
+            "destinations",
+            "suppliers",
+            "services",
+            "specialized_services",
+            "cancellation_policies",
+            "bookings",
+            "service_operations",
+            "rates",
+            "passengers"
+        ]
+    }
+
+
+# ============================================
+# AUTHENTICATION TEST ENDPOINTS
+# ============================================
+
+@app.get("/api/v1/auth/test")
+async def auth_test(current_user: Dict[str, Any] = Depends(get_current_user)):
+    """
+    Test authentication endpoint
+
+    Returns:
+        User information if authentication is successful
+    """
+    return {
+        "message": "Authentication successful",
+        "user": current_user,
+        "service": "booking-operations-service",
+        "timestamp": datetime.utcnow().isoformat()
+    }
+
+
+@app.get("/api/v1/tenants/{tenant_slug}/auth/test")
+async def tenant_auth_test(
+    tenant_slug: str,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    db: Session = Depends(get_tenant_db)
+):
+    """
+    Test tenant-specific authentication
+
+    Args:
+        tenant_slug: Tenant identifier
+        current_user: Current authenticated user
+        db: Database session
+
+    Returns:
+        Tenant access confirmation
+    """
+    # Check tenant access
+    check_tenant_slug_access(current_user, tenant_slug)
+
+    return {
+        "message": f"Tenant access successful for {tenant_slug}",
+        "user": current_user,
+        "tenant_slug": tenant_slug,
+        "service": "booking-operations-service",
         "timestamp": datetime.utcnow().isoformat()
     }
 
@@ -166,26 +306,75 @@ async def initialize_tenant(
 
 
 # ============================================
-# IMPORT ROUTERS
+# SERVICE INFORMATION ENDPOINTS
 # ============================================
 
-# Import routers for different Booking Operations modules
-from endpoints_suppliers import router as suppliers_router
-from endpoints_services import router as services_router
-from endpoints_bookings import router as bookings_router
-from endpoints_passengers import router as passengers_router
-from endpoints_rates import router as rates_router
-from endpoints_operations import router as operations_router
-from endpoints_availability import router as availability_router
+@app.get("/api/v1/service/info")
+async def service_info():
+    """
+    Get service information and module status
 
-# Include routers
-app.include_router(suppliers_router, prefix="/api/v1", tags=["Suppliers"])
-app.include_router(services_router, prefix="/api/v1", tags=["Services"])
-app.include_router(bookings_router, prefix="/api/v1", tags=["Bookings"])
-app.include_router(passengers_router, prefix="/api/v1", tags=["Passengers"])
-app.include_router(rates_router, prefix="/api/v1", tags=["Rates"])
-app.include_router(operations_router, prefix="/api/v1", tags=["Operations"])
-app.include_router(availability_router, prefix="/api/v1", tags=["Availability"])
+    Returns:
+        Service metadata and module information
+    """
+    return {
+        "service_name": "booking-operations-service",
+        "version": "2.0.0",
+        "architecture": "modular",
+        "description": "Booking Operations Management Service for Multi-tenant Platform",
+        "modules": {
+            "countries": {
+                "description": "Country reference data management",
+                "endpoints": ["list", "get", "create", "update", "delete"]
+            },
+            "destinations": {
+                "description": "Travel destination management",
+                "endpoints": ["list", "get", "create", "update", "delete", "search"]
+            },
+            "suppliers": {
+                "description": "Supplier management and operations",
+                "endpoints": ["list", "get", "create", "update", "delete"]
+            },
+            "services": {
+                "description": "Service catalog management",
+                "endpoints": ["list", "get", "create", "update", "delete"]
+            },
+            "specialized_services": {
+                "description": "Specialized service types (tours, transfers, etc.)",
+                "endpoints": ["list", "get", "create", "update", "delete"]
+            },
+            "cancellation_policies": {
+                "description": "Cancellation policy management",
+                "endpoints": ["list", "get", "create", "update", "delete"]
+            },
+            "bookings": {
+                "description": "Booking management and operations",
+                "endpoints": ["list", "get", "create", "update", "cancel", "confirm"]
+            },
+            "service_operations": {
+                "description": "Service operation tracking",
+                "endpoints": ["list", "get", "create", "update", "status"]
+            },
+            "rates": {
+                "description": "Rate and pricing management",
+                "endpoints": ["list", "get", "create", "update", "delete"]
+            },
+            "passengers": {
+                "description": "Passenger data management",
+                "endpoints": ["list", "get", "create", "update", "delete"]
+            }
+        },
+        "features": [
+            "Multi-tenant architecture",
+            "Authentication and authorization",
+            "Modular design pattern",
+            "Comprehensive booking management",
+            "Rate and pricing management",
+            "Service operation tracking",
+            "International tour support"
+        ],
+        "timestamp": datetime.utcnow().isoformat()
+    }
 
 
 # ============================================
@@ -200,6 +389,7 @@ async def http_exception_handler(request: Request, exc: HTTPException):
         content={
             "error": exc.detail,
             "status_code": exc.status_code,
+            "service": "booking-operations-service",
             "timestamp": datetime.utcnow().isoformat()
         }
     )
@@ -214,6 +404,7 @@ async def general_exception_handler(request: Request, exc: Exception):
         content={
             "error": "Internal server error",
             "status_code": 500,
+            "service": "booking-operations-service",
             "timestamp": datetime.utcnow().isoformat()
         }
     )

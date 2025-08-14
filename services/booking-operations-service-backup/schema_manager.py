@@ -9,23 +9,8 @@ from sqlalchemy import create_engine, text, inspect
 from sqlalchemy.orm import Session
 from datetime import datetime
 
-from models_base import Base
+from models import Base
 from database import DATABASE_URL
-
-# Import all models to register them with Base.metadata
-from countries.models import Country
-from destinations.models import Destination
-from suppliers.models import Supplier
-from services.models import Service, ServiceAvailability, ServiceDailyCapacity, ServiceParticipant
-from specialized_services.models import TransferService, TourService
-from cancellation_policies.models import CancellationPolicy
-from bookings.models import Booking, BookingLine, BookingPassenger
-from service_operations.models import ServiceOperation
-from rates.models import (
-    Rate, RateVariant, RatePassengerPrice, RateTierPrice,
-    PackageRate, PackageRatePassengerPrice
-)
-from passengers.models import Passenger
 
 logger = logging.getLogger(__name__)
 
