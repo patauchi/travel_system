@@ -315,23 +315,17 @@ def init_db():
     This is typically handled by migrations, but included for completeness
     """
     try:
-        # Import all models to ensure they're registered from modular structure
-        from users.models import (
-            User, Role, Permission, Team,
-            UserSession, PasswordResetToken,
+        # Import all models to ensure they're registered
+        from models import (
+            User, Role, Permission, Team, Setting,
+            UserSession, AuditLog, PasswordResetToken,
             EmailVerificationToken, ApiKey
         )
-        from settings.models import Setting, AuditLog
-        from tools.models import (
-            Note, Task, LogCall, Attachment, Event,
-            CarbonFootprint, ChannelConfig, Review
-        )
 
-        logger.info("Database models loaded successfully from modular structure")
+        logger.info("Database models loaded successfully")
     except Exception as e:
         logger.error(f"Error loading database models: {str(e)}")
-        # Don't raise to allow service to start even if models aren't available
-        logger.warning("Continuing without model imports - they may be loaded later")
+        raise
 
 
 # Initialize database on module load

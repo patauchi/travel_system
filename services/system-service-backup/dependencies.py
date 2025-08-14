@@ -9,7 +9,7 @@ from sqlalchemy import text
 from typing import Optional, Generator
 import logging
 
-from database import get_tenant_session_factory, get_db, verify_tenant_schema_exists
+from database import get_tenant_session_factory, get_db
 
 logger = logging.getLogger(__name__)
 
@@ -137,6 +137,8 @@ def verify_tenant_schema(tenant_slug: str = Path(...)) -> str:
     Raises:
         HTTPException: If the tenant schema doesn't exist
     """
+    from database import verify_tenant_schema_exists
+
     schema_name = f"tenant_{tenant_slug.replace('-', '_')}"
 
     if not verify_tenant_schema_exists(schema_name):

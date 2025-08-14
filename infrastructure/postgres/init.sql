@@ -323,7 +323,7 @@ VALUES (
     uuid_generate_v4(),
     'admin@system.local',
     'superadmin',
-    '$2b$12$K8Z.3V.KNWsJZH0GDTJmNeFKpWVGBXiXHGJK6YqLqY8hSYxKxGJNy', -- bcrypt hash of 'SuperAdmin123!'
+    '$2b$12$LQv3c7yqBtdCO7uiOkZpLuK6T4OOJpSJ4mFQVjb8tWNcDH8NlZ8DG', -- bcrypt hash of 'SuperAdmin123!'
     'System',
     'Administrator',
     'super_admin',
