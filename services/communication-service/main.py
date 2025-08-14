@@ -3,12 +3,16 @@ Communication Service Main Application
 FastAPI application for handling all communication-related operations
 """
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import logging
 import os
 from typing import Dict, Any
+from datetime import datetime
+
+# Import shared authentication (copied locally to avoid Docker path issues)
+from shared_auth import get_current_user, require_super_admin, check_tenant_slug_access
 
 # Import database and schema management
 from database import get_tenant_db, verify_connection
@@ -237,6 +241,51 @@ async def receive_webhook(
     # and create appropriate inbox conversations/messages
 
     return {"status": "received", "channel": channel}
+
+# ============================================
+# AUTHENTICATION TEST ENDPOINTS
+# ============================================
+
+@app.get("/api/v1/auth/test")
+async def auth_test(
+    current_user: dict = Depends(get_current_user)
+):
+    """Test endpoint to verify authentication is working"""
+    return {
+        "message": "Authentication working!",
+        "user": {
+            "id": current_user.get("id"),
+            "username": current_user.get("username"),
+            "role": current_user.get("role"),
+            "tenant_slug": current_user.get("tenant_slug")
+        },
+        "timestamp": datetime.now().isoformat()
+    }
+
+@app.get("/api/v1/tenants/{tenant_slug}/auth/test")
+async def tenant_auth_test(
+    tenant_slug: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """Test endpoint to verify tenant access control"""
+    # Check tenant access
+    if not check_tenant_slug_access(current_user, tenant_slug):
+        raise HTTPException(
+            status_code=403,
+            detail=f"Access denied to tenant: {tenant_slug}"
+        )
+
+    return {
+        "message": f"Tenant access working for {tenant_slug}!",
+        "user": {
+            "id": current_user.get("id"),
+            "username": current_user.get("username"),
+            "role": current_user.get("role"),
+            "user_tenant": current_user.get("tenant_slug"),
+            "requested_tenant": tenant_slug
+        },
+        "access_granted": True
+    }
 
 # ============================================
 # ERROR HANDLERS

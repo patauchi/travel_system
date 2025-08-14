@@ -6,9 +6,12 @@ API endpoints for inbox conversations, messages, and quick replies
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 from sqlalchemy import desc, or_, and_, func
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from datetime import datetime, timedelta
 from uuid import UUID
+
+# Import shared authentication
+from shared_auth import get_current_user, check_tenant_slug_access
 
 from database import get_tenant_db
 from .models import InboxConversation, InboxMessage, InboxQuickReply
@@ -32,54 +35,77 @@ quick_replies_router = APIRouter(prefix="/api/v1/communications/quick-replies", 
 async def create_conversation(
     conversation_data: ConversationCreate,
     tenant_slug: str = Query(..., description="Tenant identifier"),
-    db: Session = Depends(lambda: get_tenant_db(f"tenant_{tenant_slug}"))
+    current_user: Dict[str, Any] = Depends(get_current_user)
 ):
     """Create a new conversation"""
-    # Check if conversation already exists
-    existing = db.query(InboxConversation).filter(
-        InboxConversation.channel == conversation_data.channel,
-        InboxConversation.contact_identifier == conversation_data.contact_identifier,
-        InboxConversation.archived_at.is_(None)
-    ).first()
+    # Check tenant access
+    if not check_tenant_slug_access(current_user, tenant_slug):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Access denied to tenant: {tenant_slug}"
+        )
 
-    if existing:
-        return existing
+    # Get database session after validation
+    from database import get_tenant_session
+    with get_tenant_session(f"tenant_{tenant_slug}") as db:
 
-    conversation = InboxConversation(**conversation_data.dict())
-    db.add(conversation)
-    db.commit()
-    db.refresh(conversation)
+        # Check if conversation already exists
+        existing = db.query(InboxConversation).filter(
+            InboxConversation.channel == conversation_data.channel,
+            InboxConversation.contact_identifier == conversation_data.contact_identifier,
+            InboxConversation.archived_at.is_(None)
+        ).first()
 
-    return conversation
+        if existing:
+            return existing
+
+        conversation = InboxConversation(**conversation_data.dict())
+        db.add(conversation)
+        db.commit()
+        db.refresh(conversation)
+
+        return conversation
 
 @conversations_router.get("/", response_model=List[ConversationResponse])
 async def list_conversations(
     tenant_slug: str = Query(..., description="Tenant identifier"),
+    current_user: Dict[str, Any] = Depends(get_current_user),
     channel: Optional[str] = None,
     status: Optional[str] = None,
     assigned_to: Optional[UUID] = None,
     is_spam: Optional[bool] = None,
     is_lead: Optional[bool] = None,
     skip: int = Query(0, ge=0),
-    limit: int = Query(100, ge=1, le=1000),
-    db: Session = Depends(lambda: get_tenant_db(f"tenant_{tenant_slug}"))
+    limit: int = Query(100, ge=1, le=1000)
 ):
     """List conversations with filters"""
-    query = db.query(InboxConversation)
+    # Check tenant access
+    if not check_tenant_slug_access(current_user, tenant_slug):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Access denied to tenant: {tenant_slug}"
+        )
 
-    if channel:
-        query = query.filter(InboxConversation.channel == channel)
-    if status:
-        query = query.filter(InboxConversation.status == status)
-    if assigned_to:
-        query = query.filter(InboxConversation.assigned_to == assigned_to)
-    if is_spam is not None:
-        query = query.filter(InboxConversation.is_spam == is_spam)
-    if is_lead is not None:
-        query = query.filter(InboxConversation.is_lead == is_lead)
+    # Get database session after validation
+    from database import get_tenant_session
+    with get_tenant_session(f"tenant_{tenant_slug}") as db:
+        query = db.query(InboxConversation)
 
-    conversations = query.order_by(desc(InboxConversation.last_message_at)).offset(skip).limit(limit).all()
-    return conversations
+        if channel:
+            query = query.filter(InboxConversation.channel == channel)
+        if status:
+            query = query.filter(InboxConversation.status == status)
+        if assigned_to:
+            query = query.filter(InboxConversation.assigned_to == assigned_to)
+        if is_spam is not None:
+            query = query.filter(InboxConversation.is_spam == is_spam)
+        if is_lead is not None:
+            query = query.filter(InboxConversation.is_lead == is_lead)
+
+        query = query.order_by(desc(InboxConversation.last_message_at))
+        conversations = query.offset(skip).limit(limit).all()
+
+        return conversations
 
 @conversations_router.get("/stats", response_model=ConversationStats)
 async def get_conversation_stats(
