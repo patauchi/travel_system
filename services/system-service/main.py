@@ -243,20 +243,31 @@ async def readiness_check(db: Session = Depends(get_db)):
 @app.post("/api/v1/tenant/initialize")
 async def initialize_tenant_schema(
     tenant_id: str,
+    schema_name: str = None,
     db: Session = Depends(get_db)
 ):
     """Initialize tenant-specific schema"""
     try:
+        # Use provided schema_name or generate from tenant_id
+        if not schema_name:
+            # Fallback: replace hyphens with underscores for valid schema name
+            schema_name = f"tenant_{tenant_id.replace('-', '_')}"
+
         # Create schema if it doesn't exist
-        schema_name = f"tenant_{tenant_id}"
         db.execute(text(f"CREATE SCHEMA IF NOT EXISTS {schema_name}"))
+        db.commit()
 
-        # Set search path to tenant schema
-        db.execute(text(f"SET search_path TO {schema_name}"))
+        # Create all tables in tenant schema using the current connection
+        # We need to use the connection from the current session
+        connection = db.connection()
 
-        # Create all tables in tenant schema using shared Base
-        Base.metadata.create_all(bind=engine)
+        # Set the schema for this connection
+        connection.execute(text(f"SET search_path TO {schema_name}"))
 
+        # Create all tables using the connection with the correct search_path
+        Base.metadata.create_all(bind=connection)
+
+        # Commit the transaction
         db.commit()
 
         logger.info(f"Initialized schema for tenant: {tenant_id}")

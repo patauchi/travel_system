@@ -82,8 +82,8 @@ def initialize_tenant_schema(tenant_id: str, schema_name: str) -> bool:
         # Call system-service to initialize the tenant schema
         with httpx.Client() as client:
             response = client.post(
-                f"http://system-service:8008/api/v1/tenants/{tenant_id}/initialize",
-                params={"schema_name": schema_name},
+                f"http://system-service:8008/api/v1/tenant/initialize",
+                params={"tenant_id": tenant_id, "schema_name": schema_name},
                 timeout=30
             )
 
@@ -184,7 +184,7 @@ def create_tenant_admin(
                     ) VALUES (
                         :id, :email, :username, :password_hash,
                         :first_name, :last_name,
-                        'active', true, true,
+                        'ACTIVE', true, true,
                         NOW(), NOW()
                     ) RETURNING id
                 """),

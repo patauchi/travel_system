@@ -1,0 +1,24 @@
+Integration Tests:
+
+Flow 1:
+1. Create a new super_admin (solo debe ser unico), It can not be created another super_admin in central_users.
+
+2. Create a tenant using super_admin credentials.
+
+
+Flow 2:
+1. Create a new super_admin (solo debe ser unico), It can not be created another super_admin in central_users.
+
+2. Create a tenant using super_admin credentials.
+
+3. Verify all tables exist in the new tenant (75-80).
+
+3. Login to new tenant and create a new user.
+
+4. Create a new channel settings. Email, Whatsapp, and Facebook messenger.
+
+5. Create a Inbox Conversations.
+
+6. Create a Inbox Messages.
+
+7. Verify that inbox messages belong to inbox conversations.
