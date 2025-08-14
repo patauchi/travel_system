@@ -18,32 +18,20 @@ DATABASE_URL = os.getenv(
     "postgresql://postgres:postgres@postgres:5432/multitenant_db"
 )
 
-# Global variables for lazy initialization
-engine = None
-SessionLocal = None
+# Create base engine for shared database
+engine = create_engine(
+    DATABASE_URL,
+    pool_pre_ping=True,
+    pool_size=5,
+    max_overflow=10,
+    echo=False
+)
+
+# Session factory for shared database
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 # Store tenant-specific engines
 tenant_engines: Dict[str, Any] = {}
-
-def get_engine():
-    """Get or create the database engine"""
-    global engine
-    if engine is None:
-        engine = create_engine(
-            DATABASE_URL,
-            pool_pre_ping=True,
-            pool_size=5,
-            max_overflow=10,
-            echo=False
-        )
-    return engine
-
-def get_session_local():
-    """Get or create the session factory"""
-    global SessionLocal
-    if SessionLocal is None:
-        SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=get_engine())
-    return SessionLocal
 
 
 def get_db() -> Generator[Session, None, None]:
@@ -53,7 +41,6 @@ def get_db() -> Generator[Session, None, None]:
     Yields:
         Session: Database session
     """
-    SessionLocal = get_session_local()
     db = SessionLocal()
     try:
         yield db

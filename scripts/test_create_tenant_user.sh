@@ -16,7 +16,7 @@ NC='\033[0m' # No Color
 API_GATEWAY="http://localhost:8000"
 AUTH_SERVICE="http://localhost:8001"
 TENANT_SERVICE="http://localhost:8002"
-SYSTEM_SERVICE="http://localhost:8004"
+SYSTEM_SERVICE="http://localhost:8008"
 FRONTEND="http://localhost:3000"
 
 # Function to print colored output
