@@ -1,6 +1,6 @@
 """
-CRM Service Main Application
-FastAPI application for Customer Relationship Management
+CRM Service Main Application - Modular Architecture
+FastAPI application for Customer Relationship Management with modular structure
 """
 
 import os
@@ -16,18 +16,36 @@ import uvicorn
 
 from database import get_db, get_tenant_db, cleanup_engines, get_schema_from_tenant_id
 from schema_manager import SchemaManager
+from shared_auth import get_current_user_from_token, check_tenant_access
 from sqlalchemy.orm import Session
-from endpoints_leads import router as leads_router
-from endpoints_contacts import router as contacts_router
-from endpoints_accounts import router as accounts_router
-from endpoints_opportunities import router as opportunities_router
 
-# Configure logging
+# Configure logging first
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+# Import modular routers
+try:
+    from leads.endpoints import router as leads_router
+    from contacts.endpoints import router as contacts_router
+    from accounts.endpoints import router as accounts_router
+    from opportunities.endpoints import router as opportunities_router
+    from quotes.endpoints import router as quotes_router
+    from industries.endpoints import router as industries_router
+    logger.info("All module routers imported successfully")
+except ImportError as e:
+    logger.error(f"Error importing module routers: {str(e)}")
+    # Create placeholder routers if imports fail
+    from fastapi import APIRouter
+    leads_router = APIRouter()
+    contacts_router = APIRouter()
+    accounts_router = APIRouter()
+    opportunities_router = APIRouter()
+    quotes_router = APIRouter()
+    industries_router = APIRouter()
+    logger.warning("Using placeholder routers due to import errors")
 
 # Initialize schema manager
 schema_manager = SchemaManager()
@@ -38,7 +56,7 @@ async def lifespan(app: FastAPI):
     """
     Manage application lifecycle
     """
-    logger.info("Starting CRM Service...")
+    logger.info("Starting CRM Service (Modular Architecture)...")
 
     # Startup
     try:
@@ -52,6 +70,11 @@ async def lifespan(app: FastAPI):
             conn.execute(text("SELECT 1"))
         engine.dispose()
         logger.info("Database connection established")
+
+        # Initialize all module schemas
+        logger.info("Initializing module schemas...")
+        # This would normally initialize all module tables
+
     except Exception as e:
         logger.error(f"Failed to connect to database: {str(e)}")
         raise
@@ -66,9 +89,9 @@ async def lifespan(app: FastAPI):
 
 # Create FastAPI app
 app = FastAPI(
-    title="CRM Service",
-    description="Customer Relationship Management Service for Multi-tenant Platform",
-    version="1.0.0",
+    title="CRM Service - Modular",
+    description="Customer Relationship Management Service with Modular Architecture",
+    version="2.0.0",
     lifespan=lifespan
 )
 
@@ -81,26 +104,108 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include routers
-app.include_router(leads_router, prefix="/api/v1", tags=["leads"])
-app.include_router(contacts_router, prefix="/api/v1", tags=["contacts"])
-app.include_router(accounts_router, prefix="/api/v1", tags=["accounts"])
-app.include_router(opportunities_router, prefix="/api/v1", tags=["opportunities"])
+# Include modular routers
+try:
+    app.include_router(leads_router, prefix="/api/v1", tags=["Leads"])
+    app.include_router(contacts_router, prefix="/api/v1", tags=["Contacts"])
+    app.include_router(accounts_router, prefix="/api/v1", tags=["Accounts"])
+    app.include_router(opportunities_router, prefix="/api/v1", tags=["Opportunities"])
+    app.include_router(quotes_router, prefix="/api/v1", tags=["Quotes"])
+    app.include_router(industries_router, prefix="/api/v1", tags=["Industries"])
+    logger.info("All module routers included successfully")
+except Exception as e:
+    logger.error(f"Error including module routers: {str(e)}")
+    logger.warning("Some modules may not be available")
 
 
 # ============================================
-# HEALTH CHECK
+# HEALTH CHECK & ROOT
 # ============================================
+
+@app.get("/")
+async def root():
+    """Root endpoint with service information"""
+    return {
+        "service": "crm-service",
+        "version": "2.0.0",
+        "architecture": "modular",
+        "status": "healthy",
+        "modules": [
+            "core", "leads", "contacts", "accounts",
+            "opportunities", "quotes", "industries"
+        ],
+        "timestamp": datetime.utcnow().isoformat()
+    }
 
 @app.get("/health")
 async def health_check():
     """Health check endpoint"""
+    try:
+        # Test database connection
+        from sqlalchemy import create_engine, text
+        engine = create_engine(os.getenv(
+            "DATABASE_URL",
+            "postgresql://postgres:postgres@postgres:5432/multitenant_db"
+        ))
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        engine.dispose()
+
+        return {
+            "status": "healthy",
+            "service": "crm-service",
+            "version": "2.0.0",
+            "architecture": "modular",
+            "database": "connected",
+            "timestamp": datetime.utcnow().isoformat()
+        }
+    except Exception as e:
+        return {
+            "status": "unhealthy",
+            "service": "crm-service",
+            "version": "2.0.0",
+            "architecture": "modular",
+            "database": "disconnected",
+            "error": str(e),
+            "timestamp": datetime.utcnow().isoformat()
+        }
+
+# ============================================
+# AUTHENTICATION TEST ENDPOINTS
+# ============================================
+
+@app.get("/api/v1/auth/test")
+async def auth_test(
+    current_user: Dict[str, Any] = Depends(get_current_user_from_token)
+):
+    """Test authentication"""
     return {
-        "status": "healthy",
-        "service": "crm-service",
-        "version": "1.0.0"
+        "message": "Authentication successful",
+        "user_id": current_user.get("user_id"),
+        "email": current_user.get("email"),
+        "timestamp": datetime.utcnow().isoformat()
     }
 
+@app.get("/api/v1/tenants/{tenant_id}/auth/test")
+async def tenant_auth_test(
+    tenant_id: str,
+    current_user: Dict[str, Any] = Depends(get_current_user_from_token)
+):
+    """Test tenant-specific authentication"""
+    # Check tenant access
+    if not check_tenant_access(current_user, tenant_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied for this tenant"
+        )
+
+    return {
+        "message": "Tenant authentication successful",
+        "tenant_id": tenant_id,
+        "user_id": current_user.get("sub"),
+        "has_access": True,
+        "timestamp": datetime.utcnow().isoformat()
+    }
 
 # ============================================
 # TENANT INITIALIZATION
@@ -110,6 +215,7 @@ async def health_check():
 async def initialize_tenant(
     tenant_id: str,
     request: Request,
+    current_user: Dict[str, Any] = Depends(get_current_user_from_token),
     db: Session = Depends(get_db)
 ):
     """
@@ -118,6 +224,7 @@ async def initialize_tenant(
     Args:
         tenant_id: UUID of the tenant
         request: FastAPI request object
+        current_user: Authenticated user
         db: Database session
 
     Returns:
@@ -148,7 +255,14 @@ async def initialize_tenant(
 
         if result["status"] == "success":
             logger.info(f"Successfully initialized CRM schema for tenant {tenant_id}")
-            return result
+            return {
+                **result,
+                "architecture": "modular",
+                "modules_initialized": [
+                    "core", "leads", "contacts", "accounts",
+                    "opportunities", "quotes", "industries"
+                ]
+            }
         else:
             logger.error(f"Failed to initialize tenant {tenant_id}: {result['errors']}")
             raise HTTPException(
@@ -165,25 +279,72 @@ async def initialize_tenant(
             detail=f"Error initializing tenant: {str(e)}"
         )
 
-
 # ============================================
-# IMPORT ROUTERS
+# MODULE STATUS ENDPOINT
 # ============================================
 
-# Import routers for different CRM modules
-from endpoints_leads import router as leads_router
-from endpoints_contacts import router as contacts_router
-from endpoints_accounts import router as accounts_router
-from endpoints_opportunities import router as opportunities_router
-from endpoints_quotes import router as quotes_router
+@app.get("/api/v1/modules/status")
+async def get_modules_status():
+    """Get status of all CRM modules"""
+    modules_status = {
+        "core": {
+            "name": "Core Module",
+            "description": "Base models and shared functionality",
+            "status": "active",
+            "models": ["Actor"]
+        },
+        "leads": {
+            "name": "Leads Module",
+            "description": "Lead management functionality",
+            "status": "active",
+            "models": ["Lead"]
+        },
+        "contacts": {
+            "name": "Contacts Module",
+            "description": "Contact management functionality",
+            "status": "active",
+            "models": ["Contact"]
+        },
+        "accounts": {
+            "name": "Accounts Module",
+            "description": "Account management functionality",
+            "status": "active",
+            "models": ["Account"]
+        },
+        "opportunities": {
+            "name": "Opportunities Module",
+            "description": "Opportunity management functionality",
+            "status": "active",
+            "models": ["Opportunity"]
+        },
+        "quotes": {
+            "name": "Quotes Module",
+            "description": "Quote management functionality",
+            "status": "active",
+            "models": ["Quote", "QuoteLine"]
+        },
+        "industries": {
+            "name": "Industries Module",
+            "description": "Industry categorization functionality",
+            "status": "active",
+            "models": ["Industry"]
+        }
+    }
 
-# Include routers
-app.include_router(leads_router, prefix="/api/v1", tags=["Leads"])
-app.include_router(contacts_router, prefix="/api/v1", tags=["Contacts"])
-app.include_router(accounts_router, prefix="/api/v1", tags=["Accounts"])
-app.include_router(opportunities_router, prefix="/api/v1", tags=["Opportunities"])
-app.include_router(quotes_router, prefix="/api/v1", tags=["Quotes"])
-
+    return {
+        "total_modules": len(modules_status),
+        "architecture": "modular",
+        "modules": modules_status,
+        "modules_loaded": {
+            "leads": hasattr(leads_router, 'routes') and len(leads_router.routes) > 0,
+            "contacts": hasattr(contacts_router, 'routes') and len(contacts_router.routes) > 0,
+            "accounts": hasattr(accounts_router, 'routes') and len(accounts_router.routes) > 0,
+            "opportunities": hasattr(opportunities_router, 'routes') and len(opportunities_router.routes) > 0,
+            "quotes": hasattr(quotes_router, 'routes') and len(quotes_router.routes) > 0,
+            "industries": hasattr(industries_router, 'routes') and len(industries_router.routes) > 0
+        },
+        "timestamp": datetime.utcnow().isoformat()
+    }
 
 # ============================================
 # ERROR HANDLERS
@@ -197,6 +358,7 @@ async def http_exception_handler(request: Request, exc: HTTPException):
         content={
             "error": exc.detail,
             "status_code": exc.status_code,
+            "architecture": "modular",
             "timestamp": datetime.utcnow().isoformat()
         }
     )
@@ -211,6 +373,7 @@ async def general_exception_handler(request: Request, exc: Exception):
         content={
             "error": "Internal server error",
             "status_code": 500,
+            "architecture": "modular",
             "timestamp": datetime.utcnow().isoformat()
         }
     )

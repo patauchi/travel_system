@@ -9,7 +9,7 @@ from sqlalchemy import create_engine, text, inspect
 from sqlalchemy.pool import NullPool
 import os
 
-from core.models import Base
+from models import Base
 
 # Configure logging
 logger = logging.getLogger(__name__)
