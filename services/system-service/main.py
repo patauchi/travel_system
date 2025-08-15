@@ -251,6 +251,7 @@ async def readiness_check(db: AsyncSession = Depends(get_db)):
 @app.post("/api/v1/auth/initialize-tenant", tags=["Authentication"])
 async def initialize_tenant_schema(
     tenant_id: str,
+    schema_name: str,
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -258,20 +259,30 @@ async def initialize_tenant_schema(
     Creates all necessary tables and initial data
     """
     try:
-        logger.info(f"Initializing schema for tenant: {tenant_id}")
+        logger.info(f"Initializing schema for tenant: {tenant_id} with schema name: {schema_name}")
 
         # Create schema if not exists
-        await db.execute(text(f"CREATE SCHEMA IF NOT EXISTS tenant_{tenant_id}"))
+        await db.execute(text(f"CREATE SCHEMA IF NOT EXISTS {schema_name}"))
 
         # Set search path to tenant schema
-        await db.execute(text(f"SET search_path TO tenant_{tenant_id}, public"))
+        await db.execute(text(f"SET search_path TO {schema_name}, public"))
 
         # Create tables in tenant schema
+        # Use a transaction to ensure all tables are created with the correct schema context
         async with engine.begin() as conn:
             # Set the schema search path for the connection
-            await conn.execute(text(f"SET search_path TO tenant_{tenant_id}, public"))
-            # Create all tables
-            await conn.run_sync(Base.metadata.create_all)
+            await conn.execute(text(f"SET search_path TO {schema_name}, public"))
+
+            # Create metadata with the schema set
+            from sqlalchemy import MetaData
+            tenant_metadata = MetaData(schema=schema_name)
+
+            # Reflect the Base metadata to the tenant metadata with the correct schema
+            for table in Base.metadata.tables.values():
+                table.to_metadata(tenant_metadata)
+
+            # Create all tables in the tenant schema
+            await conn.run_sync(tenant_metadata.create_all)
 
         # Create default admin user
         from users.models import User, Role, Permission
@@ -308,7 +319,7 @@ async def initialize_tenant_schema(
             await db.execute(
                 text("""
                     INSERT INTO users (id, email, username, password_hash, first_name, last_name, status, is_active, is_verified)
-                    VALUES (:id, :email, :username, :password_hash, :first_name, :last_name, :status, :is_active, :is_verified)
+                    VALUES (:id, :email, :username, :password_hash, :first_name, :last_name, 'ACTIVE'::userstatus, :is_active, :is_verified)
                 """),
                 {
                     "id": admin_user_id,
@@ -317,7 +328,6 @@ async def initialize_tenant_schema(
                     "password_hash": password_hash,
                     "first_name": "Admin",
                     "last_name": "User",
-                    "status": "active",
                     "is_active": True,
                     "is_verified": True
                 }
