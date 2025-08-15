@@ -226,25 +226,18 @@ def safe_tenant_session(tenant_slug: str) -> Generator[Session, None, None]:
         HTTPException: 404 if tenant schema doesn't exist
         HTTPException: 500 for other database errors
     """
-    from database import get_tenant_session, schema_exists
+    from database import get_tenant_session
 
     # Convert tenant slug to schema name (replace hyphens with underscores)
     schema_name = f"tenant_{tenant_slug.replace('-', '_')}"
 
-    # Check if schema exists
-    if not schema_exists(schema_name):
-        logger.warning(f"Attempted to access non-existent tenant schema: {schema_name}")
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Tenant not found: {tenant_slug}"
-        )
-
     try:
+        # get_tenant_session already checks if schema exists
         with get_tenant_session(schema_name) as session:
             yield session
     except ValueError as e:
-        # This shouldn't happen if schema_exists check passed, but handle it anyway
-        logger.error(f"ValueError accessing tenant {tenant_slug}: {str(e)}")
+        # Schema doesn't exist
+        logger.warning(f"Attempted to access non-existent tenant schema: {schema_name}")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Tenant not found: {tenant_slug}"
@@ -252,7 +245,10 @@ def safe_tenant_session(tenant_slug: str) -> Generator[Session, None, None]:
     except Exception as e:
         # Log the actual error for debugging
         logger.error(f"Database error for tenant {tenant_slug}: {str(e)}")
-        # Don't expose internal error details to the client
+        # Re-raise the exception if it's already an HTTPException
+        if isinstance(e, HTTPException):
+            raise e
+        # Otherwise wrap it in a 500 error
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred while processing the request"

@@ -259,7 +259,6 @@ class TestSystemSecurity:
             "email": f"test_user_{uuid.uuid4().hex[:8]}@test.com",
             "username": f"test_user_{uuid.uuid4().hex[:8]}",
             "password": "TestUser123!",
-            "confirm_password": "TestUser123!",
             "first_name": "Test",
             "last_name": "User",
             "department": "Engineering",
@@ -582,8 +581,6 @@ class TestSystemSecurity:
         note_data = {
             "title": "Test Note",
             "content": "This is a test note content",
-            "notable_id": 1,
-            "notable_type": "user",
             "priority": "medium"
         }
 
@@ -663,9 +660,7 @@ class TestSystemSecurity:
             "description": "This is a test task",
             "status": "pending",
             "priority": "high",
-            "due_date": (datetime.now() + timedelta(days=7)).isoformat(),
-            "taskable_id": 1,
-            "taskable_type": "user"
+            "due_date": (datetime.now() + timedelta(days=7)).isoformat()
         }
 
         response = await client.post(
@@ -743,9 +738,7 @@ class TestSystemSecurity:
             "phone_number": "+1234567890",
             "call_type": "outgoing",
             "status": "completed",
-            "notes": "Test call log",
-            "logacallable_id": 1,
-            "logacallable_type": "user"
+            "notes": "Test call log"
         }
 
         response = await client.post(
@@ -789,9 +782,7 @@ class TestSystemSecurity:
             "event_type": "meeting",
             "status": "scheduled",
             "start_date": datetime.now().isoformat(),
-            "end_date": (datetime.now() + timedelta(hours=1)).isoformat(),
-            "eventable_id": 1,
-            "eventable_type": "user"
+            "end_date": (datetime.now() + timedelta(hours=1)).isoformat()
         }
 
         response = await client.post(

@@ -127,6 +127,7 @@ async def list_users(
     """List users with optional filtering"""
     from shared_auth import safe_tenant_session
     from sqlalchemy.orm import joinedload
+    from datetime import datetime
 
     # Validate tenant access first
     validate_tenant_access(current_user, tenant_slug)
@@ -162,18 +163,18 @@ async def list_users(
                 "department": user.department,
                 "title": user.title,
                 "employee_id": user.employee_id,
-                "timezone": user.timezone,
-                "language": user.language,
-                "currency": user.currency,
+                "timezone": user.timezone or "UTC",
+                "language": user.language or "en",
+                "currency": user.currency or "USD",
                 "status": user.status,
                 "is_active": user.is_active,
                 "is_verified": user.is_verified,
                 "email_verified_at": user.email_verified_at,
                 "last_login_at": user.last_login_at,
                 "last_activity_at": user.last_activity_at,
-                "two_factor_enabled": user.two_factor_enabled,
-                "created_at": user.created_at,
-                "updated_at": user.updated_at,
+                "two_factor_enabled": user.two_factor_enabled if user.two_factor_enabled is not None else False,
+                "created_at": user.created_at or datetime.utcnow(),
+                "updated_at": user.updated_at or datetime.utcnow(),
                 "roles": user.roles if user.roles else [],
                 "teams": user.teams if user.teams else []
             }
