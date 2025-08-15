@@ -79,7 +79,7 @@ async def create_note(
         db.commit()
         db.refresh(tenant_note)
 
-        return tenant_note
+        return tenant_note.to_dict()
 
 
 @router.get("/notes", response_model=List[NoteResponse])
@@ -134,7 +134,7 @@ async def list_notes(
         query = query.order_by(Note.priority.desc(), Note.created_at.desc())
 
         notes = query.offset(skip).limit(limit).all()
-        return notes
+        return [note.to_dict() for note in notes]
 
 
 @router.get("/notes/{note_id}", response_model=NoteResponse)
@@ -156,7 +156,7 @@ async def get_note(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Note not found"
             )
-        return note
+        return note.to_dict()
 
 
 @router.put("/notes/{note_id}", response_model=NoteResponse)
@@ -188,7 +188,7 @@ async def update_note(
         db.commit()
         db.refresh(db_note)
 
-        return db_note
+        return db_note.to_dict()
 
 
 @router.delete("/notes/{note_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -225,32 +225,53 @@ async def create_task(
     tenant_slug: str,
     current_user = Depends(get_current_user)
 ):
-    """Create a new task using TaskService"""
-    from tools.services.task_service import task_service
+    """Create a new task using two-phase creation"""
+    from shared_auth import safe_tenant_session
+    from database import get_db
 
     # Validate tenant access first
     validate_tenant_access(current_user, tenant_slug)
 
+    # Phase 1: Create the task in the shared/global context to validate foreign keys
+    db_global = next(get_db())
     try:
-        # Use TaskService to handle context properly
-        task_dict = task_service.create_task(
-            tenant_slug=tenant_slug,
-            task_data=task_data,
-            current_user_id=current_user.get("user_id") or current_user.get("id")
+        db_task = Task(
+            title=task_data.title,
+            description=task_data.description,
+            status=task_data.status,
+            priority=task_data.priority,
+            due_date=task_data.due_date,
+            taskable_id=task_data.taskable_id,
+            taskable_type=task_data.taskable_type,
+            assigned_to=task_data.assigned_to,
+            created_by=current_user.get("user_id") or current_user.get("id")
         )
 
-        # Return the task dict directly - FastAPI will serialize it
-        return task_dict
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e)
+        # Don't add to global session, just validate the model
+        # The actual insert will happen in the tenant context
+    finally:
+        db_global.close()
+
+    # Phase 2: Insert into tenant schema
+    with safe_tenant_session(tenant_slug) as db:
+        # Create a new instance for the tenant session
+        tenant_task = Task(
+            title=task_data.title,
+            description=task_data.description,
+            status=task_data.status,
+            priority=task_data.priority,
+            due_date=task_data.due_date,
+            taskable_id=task_data.taskable_id,
+            taskable_type=task_data.taskable_type,
+            assigned_to=task_data.assigned_to,
+            created_by=current_user.get("user_id") or current_user.get("id")
         )
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to create task: {str(e)}"
-        )
+
+        db.add(tenant_task)
+        db.commit()
+        db.refresh(tenant_task)
+
+        return tenant_task.to_dict()
 
 
 @router.get("/tasks", response_model=List[TaskResponse])
@@ -261,51 +282,63 @@ async def list_tasks(
     status: Optional[str] = Query(None),
     priority: Optional[str] = Query(None),
     assigned_to: Optional[UUID] = Query(None),
-    assigned_by: Optional[UUID] = Query(None),
-    related_entity_type: Optional[str] = Query(None),
-    related_entity_id: Optional[int] = Query(None),
+    created_by: Optional[UUID] = Query(None),
+    taskable_type: Optional[str] = Query(None),
+    taskable_id: Optional[int] = Query(None),
     due_before: Optional[date] = Query(None),
     due_after: Optional[date] = Query(None),
     search: Optional[str] = Query(None),
     current_user = Depends(get_current_user)
 ):
     """List tasks with filtering and pagination"""
-    from tools.services.task_service import task_service
+    from shared_auth import safe_tenant_session
+    from sqlalchemy import or_
 
     # Validate tenant access first
     validate_tenant_access(current_user, tenant_slug)
 
-    # Build filters dict
-    filters = {}
-    if status:
-        filters['status'] = status
-    if priority:
-        filters['priority'] = priority
-    if assigned_to:
-        filters['assigned_to'] = assigned_to
-    if assigned_by:
-        filters['created_by'] = assigned_by
-    if due_before:
-        filters['due_before'] = due_before
-    if due_after:
-        filters['due_after'] = due_after
+    with safe_tenant_session(tenant_slug) as db:
+        query = db.query(Task).filter(Task.deleted_at.is_(None))
 
-    # Note: search, related_entity_type, and related_entity_id
-    # would need to be added to the service method
+        # Apply filters
+        if status:
+            query = query.filter(Task.status == status)
 
-    try:
-        tasks = task_service.list_tasks(
-            tenant_slug=tenant_slug,
-            skip=skip,
-            limit=limit,
-            filters=filters
-        )
-        return tasks
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to list tasks: {str(e)}"
-        )
+        if priority:
+            query = query.filter(Task.priority == priority)
+
+        if assigned_to:
+            query = query.filter(Task.assigned_to == assigned_to)
+
+        if created_by:
+            query = query.filter(Task.created_by == created_by)
+
+        if taskable_type:
+            query = query.filter(Task.taskable_type == taskable_type)
+
+        if taskable_id:
+            query = query.filter(Task.taskable_id == taskable_id)
+
+        if due_before:
+            query = query.filter(Task.due_date <= due_before)
+
+        if due_after:
+            query = query.filter(Task.due_date >= due_after)
+
+        if search:
+            search_term = f"%{search}%"
+            query = query.filter(
+                or_(
+                    Task.title.ilike(search_term),
+                    Task.description.ilike(search_term)
+                )
+            )
+
+        # Order by priority and due date
+        query = query.order_by(Task.priority.desc(), Task.due_date.asc())
+
+        tasks = query.offset(skip).limit(limit).all()
+        return [task.to_dict() for task in tasks]
 
 
 @router.get("/tasks/{task_id}", response_model=TaskResponse)
@@ -315,34 +348,20 @@ async def get_task(
     current_user = Depends(get_current_user)
 ):
     """Get a specific task by ID"""
-    from tools.services.task_service import task_service
+    from shared_auth import safe_tenant_session
+    from sqlalchemy import and_
 
     # Validate tenant access first
     validate_tenant_access(current_user, tenant_slug)
 
-    try:
-        task = task_service.get_task(
-            tenant_slug=tenant_slug,
-            task_id=task_id
-        )
-
+    with safe_tenant_session(tenant_slug) as db:
+        task = db.query(Task).filter(and_(Task.id == task_id, Task.deleted_at.is_(None))).first()
         if not task:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Task not found"
             )
-
-        return task
-    except Exception as e:
-        if "not found" in str(e).lower():
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Task not found"
-            )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to get task: {str(e)}"
-        )
+        return task.to_dict()
 
 
 @router.put("/tasks/{task_id}", response_model=TaskResponse)
@@ -353,41 +372,32 @@ async def update_task(
     current_user = Depends(get_current_user)
 ):
     """Update a task"""
-    from tools.services.task_service import task_service
+    from shared_auth import safe_tenant_session
+    from sqlalchemy import and_
+    from datetime import datetime
 
     # Validate tenant access first
     validate_tenant_access(current_user, tenant_slug)
 
-    try:
-        task = task_service.update_task(
-            tenant_slug=tenant_slug,
-            task_id=task_id,
-            task_data=task_data,
-            current_user_id=current_user.get("user_id") or current_user.get("id")
-        )
-
+    with safe_tenant_session(tenant_slug) as db:
+        task = db.query(Task).filter(and_(Task.id == task_id, Task.deleted_at.is_(None))).first()
         if not task:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Task not found"
             )
 
-        return task
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e)
-        )
-    except Exception as e:
-        if "not found" in str(e).lower():
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Task not found"
-            )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to update task: {str(e)}"
-        )
+        # Update fields
+        update_data = task_data.dict(exclude_unset=True)
+        for field, value in update_data.items():
+            setattr(task, field, value)
+
+        task.updated_at = datetime.utcnow()
+
+        db.commit()
+        db.refresh(task)
+
+        return task.to_dict()
 
 
 @router.delete("/tasks/{task_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -397,33 +407,27 @@ async def delete_task(
     current_user = Depends(get_current_user)
 ):
     """Delete a task (soft delete)"""
-    from tools.services.task_service import task_service
+    from shared_auth import safe_tenant_session
+    from sqlalchemy import and_
+    from datetime import datetime
 
     # Validate tenant access first
     validate_tenant_access(current_user, tenant_slug)
 
-    try:
-        deleted = task_service.delete_task(
-            tenant_slug=tenant_slug,
-            task_id=task_id,
-            current_user_id=current_user.get("user_id") or current_user.get("id")
-        )
+    with safe_tenant_session(tenant_slug) as db:
+        task = db.query(Task).filter(and_(Task.id == task_id, Task.deleted_at.is_(None))).first()
+        if not task:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Task not found"
+            )
 
-        if not deleted:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Task not found"
-            )
-    except Exception as e:
-        if "not found" in str(e).lower():
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Task not found"
-            )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to delete task: {str(e)}"
-        )
+        # Soft delete
+        task.deleted_at = datetime.utcnow()
+
+        db.commit()
+
+        return {"message": "Task deleted successfully"}
 
 
 # ============================================
@@ -453,7 +457,7 @@ async def create_logcall(
             notes=logcall_data.notes,
             logacallable_id=logcall_data.logacallable_id,
             logacallable_type=logcall_data.logacallable_type,
-            user_id=current_user.get("user_id") or current_user.get("id")
+            created_by=current_user.get("user_id") or current_user.get("id")
         )
         # Just validate, don't persist
     finally:
@@ -468,14 +472,14 @@ async def create_logcall(
             notes=logcall_data.notes,
             logacallable_id=logcall_data.logacallable_id,
             logacallable_type=logcall_data.logacallable_type,
-            user_id=current_user.get("user_id") or current_user.get("id")
+            created_by=current_user.get("user_id") or current_user.get("id")
         )
 
         db.add(tenant_logcall)
         db.commit()
         db.refresh(tenant_logcall)
 
-        return tenant_logcall
+        return tenant_logcall.to_dict()
 
 
 @router.get("/logcalls", response_model=List[LogCallResponse])
@@ -524,7 +528,7 @@ async def list_logcalls(
 
         # Execute query
         logcalls = query.offset(skip).limit(limit).all()
-        return logcalls
+        return [logcall.to_dict() for logcall in logcalls]
 
 
 @router.get("/logcalls/{logcall_id}", response_model=LogCallResponse)
@@ -547,7 +551,7 @@ async def get_logcall(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Log call not found"
             )
-        return logcall
+        return logcall.to_dict()
 
 
 # ============================================
@@ -607,7 +611,7 @@ async def create_event(
         db.commit()
         db.refresh(tenant_event)
 
-        return tenant_event
+        return tenant_event.to_dict()
 
 
 @router.get("/events", response_model=List[EventResponse])
@@ -666,7 +670,7 @@ async def list_events(
         query = query.order_by(Event.start_date.asc())
 
         events = query.offset(skip).limit(limit).all()
-        return events
+        return [event.to_dict() for event in events]
 
 
 @router.get("/events/{event_id}", response_model=EventResponse)
@@ -689,7 +693,7 @@ async def get_event(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Event not found"
             )
-        return event
+        return event.to_dict()
 
 
 # ============================================
@@ -700,35 +704,60 @@ async def get_event(
 async def create_channel_config(
     config_data: ChannelConfigCreate,
     tenant_slug: str,
-    db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
-    """Create a new channel configuration"""
-    # Check if channel config already exists for this channel
-    existing_config = db.query(ChannelConfig).filter(ChannelConfig.channel == config_data.channel).first()
-    if existing_config:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Channel configuration for {config_data.channel.value} already exists"
+    """Create a new channel configuration using two-phase creation"""
+    from shared_auth import safe_tenant_session
+    from database import get_db
+
+    # Validate tenant access first
+    validate_tenant_access(current_user, tenant_slug)
+
+    # Phase 1: Create the config in the shared/global context to validate foreign keys
+    db_global = next(get_db())
+    try:
+        db_config = ChannelConfig(
+            name=config_data.name,
+            channel=config_data.channel,
+            is_active=config_data.is_active,
+            config=config_data.config,
+            welcome_message=config_data.welcome_message,
+            offline_message=config_data.offline_message,
+            business_hours=config_data.business_hours,
+            assignment_rule=config_data.assignment_rule,
+            default_assignee=config_data.default_assignee
+        )
+        # Don't add to global session, just validate the model
+    finally:
+        db_global.close()
+
+    # Phase 2: Insert into tenant schema
+    with safe_tenant_session(tenant_slug) as db:
+        # Check if channel config already exists for this channel
+        existing_config = db.query(ChannelConfig).filter(ChannelConfig.channel == config_data.channel).first()
+        if existing_config:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Channel configuration for {config_data.channel.value} already exists"
+            )
+
+        tenant_config = ChannelConfig(
+            name=config_data.name,
+            channel=config_data.channel,
+            is_active=config_data.is_active,
+            config=config_data.config,
+            welcome_message=config_data.welcome_message,
+            offline_message=config_data.offline_message,
+            business_hours=config_data.business_hours,
+            assignment_rule=config_data.assignment_rule,
+            default_assignee=config_data.default_assignee
         )
 
-    db_config = ChannelConfig(
-        name=config_data.name,
-        channel=config_data.channel,
-        is_active=config_data.is_active,
-        config=config_data.config,
-        welcome_message=config_data.welcome_message,
-        offline_message=config_data.offline_message,
-        business_hours=config_data.business_hours,
-        assignment_rule=config_data.assignment_rule,
-        default_assignee=config_data.default_assignee
-    )
+        db.add(tenant_config)
+        db.commit()
+        db.refresh(tenant_config)
 
-    db.add(db_config)
-    db.commit()
-    db.refresh(db_config)
-
-    return db_config
+        return tenant_config.to_dict()
 
 
 @router.get("/channel-configs", response_model=List[ChannelConfigResponse])
@@ -738,21 +767,25 @@ async def list_channel_configs(
     limit: int = Query(100, ge=1, le=1000),
     channel: Optional[str] = Query(None),
     is_active: Optional[bool] = Query(None),
-    db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
-    """List channel configurations with filtering and pagination"""
-    query = db.query(ChannelConfig)
+    """List channel configurations with filtering"""
+    from shared_auth import safe_tenant_session
 
-    # Apply filters
-    if channel:
-        query = query.filter(ChannelConfig.channel == channel)
+    # Validate tenant access first
+    validate_tenant_access(current_user, tenant_slug)
 
-    if is_active is not None:
-        query = query.filter(ChannelConfig.is_active == is_active)
+    with safe_tenant_session(tenant_slug) as db:
+        query = db.query(ChannelConfig)
 
-    configs = query.offset(skip).limit(limit).all()
-    return configs
+        if channel:
+            query = query.filter(ChannelConfig.channel == channel)
+
+        if is_active is not None:
+            query = query.filter(ChannelConfig.is_active == is_active)
+
+        configs = query.offset(skip).limit(limit).all()
+        return [config.to_dict() for config in configs]
 
 
 # ============================================
@@ -763,35 +796,42 @@ async def list_channel_configs(
 async def bulk_update_tasks(
     bulk_data: BulkTaskUpdate,
     tenant_slug: str,
-    db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
     """Bulk update multiple tasks"""
+    from shared_auth import safe_tenant_session
+
+    # Validate tenant access first
+    validate_tenant_access(current_user, tenant_slug)
+
     result = BulkTaskUpdateResult(updated_count=0, failed_count=0, errors=[])
 
-    for task_id in bulk_data.task_ids:
-        try:
-            task = db.query(Task).filter(and_(Task.id == task_id, Task.deleted_at.is_(None))).first()
-            if not task:
+    with safe_tenant_session(tenant_slug) as db:
+        for task_id in bulk_data.task_ids:
+            try:
+                task = db.query(Task).filter(and_(Task.id == task_id, Task.deleted_at.is_(None))).first()
+                if not task:
+                    result.failed_count += 1
+                    result.errors.append({"task_id": str(task_id), "error": "Task not found"})
+                    continue
+
+                # Update fields if provided
+                if bulk_data.status is not None:
+                    task.status = bulk_data.status
+                if bulk_data.priority is not None:
+                    task.priority = bulk_data.priority
+                if bulk_data.assigned_to is not None:
+                    task.assigned_to = bulk_data.assigned_to
+
+                task.updated_at = datetime.utcnow()
+                result.updated_count += 1
+
+            except Exception as e:
                 result.failed_count += 1
-                result.errors.append({"task_id": str(task_id), "error": "Task not found"})
-                continue
+                result.errors.append({"task_id": str(task_id), "error": str(e)})
 
-            # Update fields if provided
-            if bulk_data.status is not None:
-                task.status = bulk_data.status
-            if bulk_data.priority is not None:
-                task.priority = bulk_data.priority
-            if bulk_data.assigned_to is not None:
-                task.assigned_to = bulk_data.assigned_to
+        db.commit()
 
-            result.updated_count += 1
-
-        except Exception as e:
-            result.failed_count += 1
-            result.errors.append({"task_id": str(task_id), "error": str(e)})
-
-    db.commit()
     return result
 
 
@@ -799,31 +839,38 @@ async def bulk_update_tasks(
 async def bulk_update_notes(
     bulk_data: BulkNoteUpdate,
     tenant_slug: str,
-    db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
     """Bulk update multiple notes"""
+    from shared_auth import safe_tenant_session
+
+    # Validate tenant access first
+    validate_tenant_access(current_user, tenant_slug)
+
     result = BulkNoteUpdateResult(updated_count=0, failed_count=0, errors=[])
 
-    for note_id in bulk_data.note_ids:
-        try:
-            note = db.query(Note).filter(Note.id == note_id).first()
-            if not note:
+    with safe_tenant_session(tenant_slug) as db:
+        for note_id in bulk_data.note_ids:
+            try:
+                note = db.query(Note).filter(Note.id == note_id).first()
+                if not note:
+                    result.failed_count += 1
+                    result.errors.append({"note_id": str(note_id), "error": "Note not found"})
+                    continue
+
+                # Update fields if provided
+                if bulk_data.priority is not None:
+                    note.priority = bulk_data.priority
+                if bulk_data.assigned_to is not None:
+                    note.assigned_to = bulk_data.assigned_to
+
+                note.updated_at = datetime.utcnow()
+                result.updated_count += 1
+
+            except Exception as e:
                 result.failed_count += 1
-                result.errors.append({"note_id": str(note_id), "error": "Note not found"})
-                continue
+                result.errors.append({"note_id": str(note_id), "error": str(e)})
 
-            # Update fields if provided
-            if bulk_data.priority is not None:
-                note.priority = bulk_data.priority
-            if bulk_data.assigned_to is not None:
-                note.assigned_to = bulk_data.assigned_to
+        db.commit()
 
-            result.updated_count += 1
-
-        except Exception as e:
-            result.failed_count += 1
-            result.errors.append({"note_id": str(note_id), "error": str(e)})
-
-    db.commit()
     return result

@@ -176,7 +176,7 @@ class LogCallResponse(BaseModel):
     notes: Optional[str]
     logacallable_id: Optional[int]
     logacallable_type: Optional[str]
-    user_id: Optional[UUID]
+    created_by: Optional[UUID]
     created_at: datetime
     updated_at: datetime
 

@@ -742,7 +742,7 @@ class TestSystemSecurity:
         logcall_data = {
             "phone_number": "+1234567890",
             "call_type": "outgoing",
-            "status": "completed",
+            "status": "answered",
             "notes": "Test call log",
             "logacallable_id": 1,
             "logacallable_type": "user"

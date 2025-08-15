@@ -62,7 +62,10 @@ class Note(Base):
         return get_user_by_id(self.created_by)
 
     def __repr__(self):
-        return f"<Note {self.id}>"
+        try:
+            return f"<Note {self.id}>"
+        except:
+            return f"<Note (detached)>"
 
     def to_dict(self):
         return {
@@ -105,7 +108,10 @@ class LogCall(Base):
     )
 
     def __repr__(self):
-        return f"<LogCall {self.id}>"
+        try:
+            return f"<LogCall {self.id}>"
+        except:
+            return f"<LogCall (detached)>"
 
     def to_dict(self):
         return {
@@ -152,7 +158,10 @@ class Task(Base):
     )
 
     def __repr__(self):
-        return f"<Task {self.id}>"
+        try:
+            return f"<Task {self.id}>"
+        except:
+            return f"<Task (detached)>"
 
     def to_dict(self):
         return {
@@ -199,7 +208,10 @@ class Attachment(Base):
     )
 
     def __repr__(self):
-        return f"<Attachment {self.id}>"
+        try:
+            return f"<Attachment {self.id}>"
+        except:
+            return f"<Attachment (detached)>"
 
     def to_dict(self):
         return {
@@ -248,7 +260,10 @@ class Event(Base):
     )
 
     def __repr__(self):
-        return f"<Event {self.id}>"
+        try:
+            return f"<Event {self.id}>"
+        except:
+            return f"<Event (detached)>"
 
     def to_dict(self):
         return {
@@ -296,7 +311,10 @@ class CarbonFootprint(Base):
     )
 
     def __repr__(self):
-        return f"<CarbonFootprint {self.id}>"
+        try:
+            return f"<CarbonFootprint {self.id}>"
+        except:
+            return f"<CarbonFootprint (detached)>"
 
     def to_dict(self):
         return {
@@ -348,7 +366,10 @@ class ChannelConfig(Base):
     )
 
     def __repr__(self):
-        return f"<ChannelConfig {self.id}>"
+        try:
+            return f"<ChannelConfig {self.id}>"
+        except:
+            return f"<ChannelConfig (detached)>"
 
     def to_dict(self):
         return {
@@ -385,7 +406,10 @@ class Review(Base):
     updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
 
     def __repr__(self):
-        return f"<Review {self.id}>"
+        try:
+            return f"<Review {self.id}>"
+        except:
+            return f"<Review (detached)>"
 
     def to_dict(self):
         return {
