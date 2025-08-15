@@ -5,6 +5,7 @@ FastAPI application for handling all communication-related operations
 
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
 import logging
 import os
@@ -294,20 +295,26 @@ async def tenant_auth_test(
 @app.exception_handler(404)
 async def not_found_handler(request, exc):
     """Handle 404 errors"""
-    return {
-        "error": "Not Found",
-        "message": "The requested resource was not found",
-        "path": str(request.url)
-    }
+    return JSONResponse(
+        status_code=404,
+        content={
+            "error": "Not Found",
+            "message": "The requested resource was not found",
+            "path": str(request.url)
+        }
+    )
 
 @app.exception_handler(500)
 async def internal_error_handler(request, exc):
     """Handle 500 errors"""
     logger.error(f"Internal error: {exc}")
-    return {
-        "error": "Internal Server Error",
-        "message": "An internal error occurred"
-    }
+    return JSONResponse(
+        status_code=500,
+        content={
+            "error": "Internal Server Error",
+            "message": "An internal error occurred"
+        }
+    )
 
 # ============================================
 # MAIN ENTRY POINT

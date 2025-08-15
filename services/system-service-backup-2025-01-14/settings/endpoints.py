@@ -9,8 +9,9 @@ from sqlalchemy import and_, or_, func
 from typing import List, Optional, Dict, Any
 from uuid import UUID
 from datetime import datetime
+
 from database import get_db
-from shared_auth import get_current_user, check_permission, validate_tenant_access
+from shared_auth import get_current_user, require_permission, get_current_tenant
 from .models import Setting, AuditLog
 from .schemas import (
     SettingCreate, SettingUpdate, SettingResponse, SettingFilter,
@@ -25,17 +26,14 @@ router = APIRouter()
 # Setting Endpoints
 # ============================================
 
-@router.post("/", response_model=SettingResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/settings", response_model=SettingResponse, status_code=status.HTTP_201_CREATED)
 async def create_setting(
     setting_data: SettingCreate,
-    tenant_slug: str,
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    current_user = Depends(get_current_user),
+    tenant_id: str = Depends(get_current_tenant)
 ):
     """Create a new setting"""
-    # Validate tenant access first
-    validate_tenant_access(current_user, tenant_slug)
-
     # Check if setting already exists
     existing_setting = db.query(Setting).filter(
         and_(Setting.category == setting_data.category, Setting.key == setting_data.key)
@@ -62,7 +60,7 @@ async def create_setting(
         allowed_values=setting_data.allowed_values,
         default_value=setting_data.default_value,
         meta_data=setting_data.meta_data,
-        updated_by=current_user.get("user_id") or current_user.get("id")
+        updated_by=current_user.id
     )
 
     db.add(db_setting)
@@ -72,7 +70,7 @@ async def create_setting(
     # Create audit log
     await create_audit_log(
         db=db,
-        user_id=current_user.get("user_id") or current_user.get("id"),
+        user_id=current_user.id,
         action="setting_created",
         resource_type="setting",
         resource_id=str(db_setting.id),
@@ -84,9 +82,8 @@ async def create_setting(
     return db_setting
 
 
-@router.get("/", response_model=List[SettingResponse])
+@router.get("/settings", response_model=List[SettingResponse])
 async def list_settings(
-    tenant_slug: str,
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
     category: Optional[str] = Query(None),
@@ -96,12 +93,10 @@ async def list_settings(
     is_system: Optional[bool] = Query(None),
     search: Optional[str] = Query(None),
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    current_user = Depends(get_current_user),
+    tenant_id: str = Depends(get_current_tenant)
 ):
     """List settings with filtering and pagination"""
-    # Validate tenant access first
-    validate_tenant_access(current_user, tenant_slug)
-
     query = db.query(Setting)
 
     # Apply filters
@@ -135,17 +130,14 @@ async def list_settings(
     return settings
 
 
-@router.get("/{setting_id}", response_model=SettingResponse)
+@router.get("/settings/{setting_id}", response_model=SettingResponse)
 async def get_setting(
     setting_id: UUID,
-    tenant_slug: str,
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    current_user = Depends(get_current_user),
+    tenant_id: str = Depends(get_current_tenant)
 ):
     """Get a specific setting by ID"""
-    # Validate tenant access first
-    validate_tenant_access(current_user, tenant_slug)
-
     setting = db.query(Setting).filter(Setting.id == setting_id).first()
     if not setting:
         raise HTTPException(
@@ -155,18 +147,15 @@ async def get_setting(
     return setting
 
 
-@router.get("/{category}/{key}", response_model=SettingResponse)
+@router.get("/settings/by-key/{category}/{key}", response_model=SettingResponse)
 async def get_setting_by_key(
     category: str,
     key: str,
-    tenant_slug: str,
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    current_user = Depends(get_current_user),
+    tenant_id: str = Depends(get_current_tenant)
 ):
     """Get a setting by category and key"""
-    # Validate tenant access first
-    validate_tenant_access(current_user, tenant_slug)
-
     setting = db.query(Setting).filter(
         and_(Setting.category == category, Setting.key == key)
     ).first()
@@ -180,13 +169,13 @@ async def get_setting_by_key(
     return setting
 
 
-@router.put("/{setting_id}", response_model=SettingResponse)
+@router.put("/settings/{setting_id}", response_model=SettingResponse)
 async def update_setting(
     setting_id: UUID,
     setting_data: SettingUpdate,
-    tenant_slug: str,
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    current_user = Depends(get_current_user),
+    tenant_id: str = Depends(get_current_tenant)
 ):
     """Update a setting"""
     db_setting = db.query(Setting).filter(Setting.id == setting_id).first()
@@ -214,14 +203,14 @@ async def update_setting(
     for field, value in update_data.items():
         setattr(db_setting, field, value)
 
-    db_setting.updated_by = current_user.get("user_id") or current_user.get("id")
+    db_setting.updated_by = current_user.id
     db.commit()
     db.refresh(db_setting)
 
     # Create audit log
     await create_audit_log(
         db=db,
-        user_id=current_user.get("user_id") or current_user.get("id"),
+        user_id=current_user.id,
         action="setting_updated",
         resource_type="setting",
         resource_id=str(db_setting.id),
@@ -233,12 +222,12 @@ async def update_setting(
     return db_setting
 
 
-@router.delete("/{setting_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/settings/{setting_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_setting(
     setting_id: UUID,
-    tenant_slug: str,
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    current_user = Depends(get_current_user),
+    tenant_id: str = Depends(get_current_tenant)
 ):
     """Delete a setting"""
     db_setting = db.query(Setting).filter(Setting.id == setting_id).first()
@@ -264,7 +253,7 @@ async def delete_setting(
     # Create audit log
     await create_audit_log(
         db=db,
-        user_id=current_user.get("user_id") or current_user.get("id"),
+        user_id=current_user.id,
         action="setting_deleted",
         resource_type="setting",
         resource_id=str(setting_id),
@@ -274,12 +263,12 @@ async def delete_setting(
     )
 
 
-@router.post("/bulk-update", response_model=Dict[str, Any])
+@router.post("/settings/bulk-update", response_model=Dict[str, Any])
 async def bulk_update_settings(
     bulk_data: SettingBulkUpdate,
-    tenant_slug: str,
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    current_user = Depends(get_current_user),
+    tenant_id: str = Depends(get_current_tenant)
 ):
     """Bulk update multiple settings"""
     results = {
@@ -304,11 +293,11 @@ async def bulk_update_settings(
                 for field, value in setting_data.items():
                     if field not in ['category', 'key']:  # Don't update key fields
                         setattr(existing_setting, field, value)
-                existing_setting.updated_by = current_user.get("user_id") or current_user.get("id")
+                existing_setting.updated_by = current_user.id
                 results["updated"] += 1
             else:
                 # Create new setting
-                new_setting = Setting(**setting_data, updated_by=current_user.get("user_id") or current_user.get("id"))
+                new_setting = Setting(**setting_data, updated_by=current_user.id)
                 db.add(new_setting)
                 results["created"] += 1
 
@@ -323,7 +312,7 @@ async def bulk_update_settings(
     # Create audit log
     await create_audit_log(
         db=db,
-        user_id=current_user.get("user_id") or current_user.get("id"),
+        user_id=current_user.id,
         action="settings_bulk_updated",
         resource_type="settings",
         changes={"results": results},
@@ -337,12 +326,12 @@ async def bulk_update_settings(
 # Configuration Management Endpoints
 # ============================================
 
-@router.get("/export/{category}", response_model=ConfigurationExport)
+@router.get("/settings/export/{category}", response_model=ConfigurationExport)
 async def export_configuration(
     category: str,
-    tenant_slug: str,
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    current_user = Depends(get_current_user),
+    tenant_id: str = Depends(get_current_tenant)
 ):
     """Export configuration settings by category"""
     settings = db.query(Setting).filter(Setting.category == category).all()
@@ -367,22 +356,20 @@ async def export_configuration(
 
 @router.get("/audit-logs", response_model=List[AuditLogResponse])
 async def list_audit_logs(
-    tenant_slug: str,
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
-    action: Optional[str] = Query(None),
-    entity_type: Optional[str] = Query(None),
-    entity_id: Optional[UUID] = Query(None),
     user_id: Optional[UUID] = Query(None),
-    start_date: Optional[datetime] = Query(None),
-    end_date: Optional[datetime] = Query(None),
+    action: Optional[str] = Query(None),
+    resource_type: Optional[str] = Query(None),
+    resource_id: Optional[str] = Query(None),
+    result: Optional[str] = Query(None),
+    date_from: Optional[datetime] = Query(None),
+    date_to: Optional[datetime] = Query(None),
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    current_user = Depends(get_current_user),
+    tenant_id: str = Depends(get_current_tenant)
 ):
     """List audit logs with filtering and pagination"""
-    # Validate tenant access first
-    validate_tenant_access(current_user, tenant_slug)
-
     query = db.query(AuditLog)
 
     # Apply filters
@@ -417,14 +404,11 @@ async def list_audit_logs(
 @router.get("/audit-logs/{log_id}", response_model=AuditLogResponse)
 async def get_audit_log(
     log_id: UUID,
-    tenant_slug: str,
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    current_user = Depends(get_current_user),
+    tenant_id: str = Depends(get_current_tenant)
 ):
     """Get a specific audit log by ID"""
-    # Validate tenant access first
-    validate_tenant_access(current_user, tenant_slug)
-
     audit_log = db.query(AuditLog).filter(AuditLog.id == log_id).first()
     if not audit_log:
         raise HTTPException(

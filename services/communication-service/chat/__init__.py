@@ -15,8 +15,7 @@ from .schemas import (
 )
 from .endpoints import (
     channels_router,
-    chat_router,
-    include_chat_routers
+    chat_router
 )
 
 __all__ = [
@@ -50,6 +49,5 @@ __all__ = [
 
     # Endpoints
     'channels_router',
-    'chat_router',
-    'include_chat_routers'
+    'chat_router'
 ]

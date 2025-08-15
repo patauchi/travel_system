@@ -13,8 +13,7 @@ from .schemas import (
 from .endpoints import (
     conversations_router,
     messages_router,
-    quick_replies_router,
-    include_inbox_routers
+    quick_replies_router
 )
 
 __all__ = [
@@ -39,6 +38,5 @@ __all__ = [
     # Endpoints
     'conversations_router',
     'messages_router',
-    'quick_replies_router',
-    'include_inbox_routers'
+    'quick_replies_router'
 ]

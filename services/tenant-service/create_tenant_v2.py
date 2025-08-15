@@ -82,7 +82,7 @@ def initialize_tenant_schema(tenant_id: str, schema_name: str) -> bool:
         # Call system-service to initialize the tenant schema
         with httpx.Client() as client:
             response = client.post(
-                f"http://system-service:8008/api/v1/tenant/initialize",
+                f"http://system-service:8008/api/v1/auth/initialize-tenant",
                 params={"tenant_id": tenant_id, "schema_name": schema_name},
                 timeout=30
             )
@@ -176,7 +176,7 @@ def create_tenant_admin(
 
             result = conn.execute(
                 text(f"""
-                    INSERT INTO {schema_name}.users (
+                    INSERT INTO "{schema_name}".users (
                         id, email, username, password_hash,
                         first_name, last_name,
                         status, is_active, is_verified,
@@ -201,8 +201,8 @@ def create_tenant_admin(
             # Assign admin role to the user
             conn.execute(
                 text(f"""
-                    INSERT INTO {schema_name}.user_roles (user_id, role_id)
-                    SELECT :user_id, id FROM {schema_name}.roles
+                    INSERT INTO "{schema_name}".user_roles (user_id, role_id)
+                    SELECT :user_id, id FROM "{schema_name}".roles
                     WHERE name = 'admin'
                     LIMIT 1
                 """),

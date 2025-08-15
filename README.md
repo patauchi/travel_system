@@ -1,6 +1,6 @@
-# Multi-Tenant SaaS Platform
+# Multi-Tenant Travel System Platform
 
-A production-ready multi-tenant SaaS platform built with microservices architecture, featuring complete tenant isolation, JWT authentication, and scalable infrastructure.
+A production-ready multi-tenant travel system platform built with microservices architecture, featuring complete tenant isolation, JWT authentication, comprehensive security testing, and scalable infrastructure.
 
 ## 🚀 Features
 
@@ -18,7 +18,7 @@ A production-ready multi-tenant SaaS platform built with microservices architect
 ## 📁 Project Structure
 
 ```
-multitenant-platform/
+travel_system/
 ├── docs/                      # Documentation
 │   ├── DATABASE_STRUCTURE.md  # Database schema documentation
 │   ├── TENANT_ACCESS_SYSTEM.md # Tenant access system design
@@ -34,15 +34,25 @@ multitenant-platform/
 ├── services/                 # Microservices
 │   ├── api-gateway/         # API Gateway service
 │   ├── auth-service/        # Authentication service
-│   ├── business-service/    # Business logic service
-│   ├── system-service/      # System management service
-│   └── tenant-service/      # Tenant management service
+│   ├── tenant-service/      # Tenant management service
+│   ├── communication-service/ # Communication & messaging service
+│   ├── crm-service/         # Customer relationship management
+│   ├── booking-operations-service/ # Booking operations
+│   ├── financial-service/   # Financial operations
+│   └── system-service/      # System management service
 ├── scripts/                  # Utility scripts
 │   ├── init_admin.py        # Initialize admin user
 │   ├── quick_start.sh       # Quick start script
 │   ├── init.sh             # Initial setup script
 │   └── test_multitenant_flow.sh # Test multi-tenant flow
 ├── tests/                    # Test suites
+│   ├── integration/         # Integration tests
+│   │   └── flow1/          # Tenant creation flow tests
+│   ├── security/           # Security tests
+│   │   ├── communication-service/ # Communication service security tests
+│   │   ├── crm-service/    # CRM service security tests
+│   │   ├── booking-operations-service/ # Booking service security tests
+│   │   └── financial-service/ # Financial service security tests
 │   └── test_auth.py         # Authentication tests
 ├── storage/                  # File storage
 │   ├── archive/             # Archived files
@@ -133,7 +143,7 @@ docker-compose ps
 
 ### Super Admin
 - Username: `admin`
-- Password: `Admin123!`
+- Password: `SuperAdmin123!`
 
 ### Demo Tenant
 - Admin: `demo_admin` / `Demo123!`
@@ -161,8 +171,11 @@ docker-compose ps
 | API Gateway | http://localhost:8000 | Central API endpoint |
 | Auth Service | http://localhost:8001 | Authentication API |
 | Tenant Service | http://localhost:8002 | Tenant management API |
-| Business Service | http://localhost:8003 | Business logic API |
-| System Service | http://localhost:8004 | System management API |
+| Communication Service | http://localhost:8005 | Communication & messaging API |
+| CRM Service | http://localhost:8006 | Customer relationship management API |
+| Booking Operations | http://localhost:8004 | Booking operations API |
+| Financial Service | http://localhost:8007 | Financial operations API |
+| System Service | http://localhost:8008 | System management API |
 | pgAdmin | http://localhost:5050 | PostgreSQL database management |
 | RabbitMQ Admin | http://localhost:15672 | Message broker UI |
 | Flower | http://localhost:5555 | Celery monitoring |
@@ -173,8 +186,11 @@ Each service provides interactive API documentation:
 
 - Auth Service: http://localhost:8001/docs
 - Tenant Service: http://localhost:8002/docs
-- Business Service: http://localhost:8003/docs
-- System Service: http://localhost:8004/docs
+- Communication Service: http://localhost:8005/docs
+- CRM Service: http://localhost:8006/docs
+- Booking Operations: http://localhost:8004/docs
+- Financial Service: http://localhost:8007/docs
+- System Service: http://localhost:8008/docs
 - API Gateway: http://localhost:8000/docs
 
 ## 🧪 Testing
@@ -196,6 +212,30 @@ make test-integration
 make test-unit
 ```
 
+### Security Testing
+Each service includes comprehensive security tests that verify:
+- Authentication requirements (401 for unauthenticated requests)
+- Authorization controls (403 for unauthorized access)
+- Cross-tenant isolation (prevents access to other tenants' data)
+- Proper error handling (no information leakage)
+
+```bash
+# Run security tests for Communication Service
+cd tests/security/communication-service
+./run_test.sh
+
+# Run security tests for CRM Service
+cd tests/security/crm-service
+./run_test.sh
+```
+
+Security tests validate:
+1. **Tenant Creation**: Creates a test tenant with super_admin credentials
+2. **Authentication**: Authenticates the tenant owner
+3. **Endpoint Protection**: Verifies endpoints reject unauthenticated requests
+4. **Authorized Access**: Confirms authenticated users can access their resources
+5. **Cross-Tenant Prevention**: Ensures users cannot access other tenants' data
+
 ### Manual Testing
 ```bash
 # Test authentication flow
@@ -203,6 +243,10 @@ python tests/test_auth.py
 
 # Test multi-tenant flow
 ./scripts/test_multitenant_flow.sh
+
+# Test integration flow
+cd tests/integration/flow1
+python test_flow1.py
 ```
 
 ## 🔧 Development
@@ -261,6 +305,10 @@ make type-check
 - **Password Hashing**: Bcrypt with configurable rounds
 - **Rate Limiting**: API endpoint protection
 - **CORS**: Configurable cross-origin policies
+- **Tenant Isolation**: Complete data separation with schema validation
+- **Error Handling**: Secure error responses without information leakage
+- **Access Control**: Multi-level authorization checks (user, tenant, role)
+- **Schema Validation**: Tenant existence verification before database access
 
 ## 📈 Monitoring
 

@@ -329,7 +329,7 @@ async def create_tenant(
             id=str(uuid.uuid4()),
             tenant_id=str(new_tenant.id),
             user_id=owner_user.id,
-            role="tenant_admin",
+            role="admin",
             is_owner=True,
             joined_at=datetime.utcnow()
         )
@@ -970,6 +970,107 @@ async def invite_user_to_tenant(
         "invitation_token": invitation_token,
         "user_exists": user is not None
     }
+
+@app.get("/api/v1/tenants/{tenant_slug}/schema")
+async def get_tenant_schema_info(
+    tenant_slug: str,
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get schema information for a tenant including list of tables"""
+
+    # Get tenant by slug
+    tenant = db.query(Tenant).filter(Tenant.slug == tenant_slug).first()
+
+    if not tenant:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Tenant not found"
+        )
+
+    # Check permissions
+    if current_user.get("role") != "super_admin":
+        tenant_user = db.query(TenantUser).filter(
+            TenantUser.tenant_id == tenant.id,
+            TenantUser.user_id == current_user["id"]
+        ).first()
+
+        if not tenant_user:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied to this tenant"
+            )
+
+    # Get list of tables in the tenant schema
+    schema_name = tenant.schema_name
+
+    try:
+        # Query to get all tables in the schema
+        result = db.execute(text(f"""
+            SELECT table_name
+            FROM information_schema.tables
+            WHERE table_schema = :schema_name
+            AND table_type = 'BASE TABLE'
+            ORDER BY table_name
+        """), {"schema_name": schema_name})
+
+        tables = [row[0] for row in result]
+
+        # Get table counts by category
+        system_tables = [t for t in tables if t in [
+            'users', 'roles', 'permissions', 'user_roles', 'role_permissions',
+            'teams', 'team_members', 'settings', 'audit_logs', 'notes',
+            'tasks', 'log_calls', 'events', 'attachments', 'calendar_events'
+        ]]
+
+        communication_tables = [t for t in tables if t in [
+            'inbox_conversations', 'inbox_messages', 'inbox_quick_replies',
+            'channels', 'channel_members', 'chat_entries', 'mentions'
+        ]]
+
+        crm_tables = [t for t in tables if t in [
+            'leads', 'contacts', 'accounts', 'opportunities', 'activities',
+            'lead_sources', 'lead_statuses', 'contact_groups', 'deals',
+            'pipelines', 'pipeline_stages'
+        ]]
+
+        booking_tables = [t for t in tables if t in [
+            'bookings', 'booking_items', 'booking_payments', 'booking_logs',
+            'services', 'service_categories', 'availability_rules',
+            'cancellation_policies', 'pricing_rules'
+        ]]
+
+        financial_tables = [t for t in tables if t in [
+            'invoices', 'invoice_items', 'payments', 'payment_methods',
+            'transactions', 'accounting_entries', 'tax_rates', 'currencies',
+            'financial_accounts', 'expense_categories'
+        ]]
+
+        return {
+            "tenant_slug": tenant_slug,
+            "schema_name": schema_name,
+            "total_tables": len(tables),
+            "tables": tables,
+            "table_categories": {
+                "system": len(system_tables),
+                "communication": len(communication_tables),
+                "crm": len(crm_tables),
+                "booking": len(booking_tables),
+                "financial": len(financial_tables),
+                "other": len(tables) - len(system_tables) - len(communication_tables) - len(crm_tables) - len(booking_tables) - len(financial_tables)
+            },
+            "missing_communication_tables": [
+                t for t in ['inbox_conversations', 'inbox_messages', 'channels', 'chat_entries']
+                if t not in tables
+            ]
+        }
+
+    except Exception as e:
+        logger.error(f"Error getting schema info: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error retrieving schema information: {str(e)}"
+        )
 
 if __name__ == "__main__":
     import uvicorn

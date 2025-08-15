@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
 from sqlalchemy import text, inspect
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
 import logging
@@ -20,20 +20,28 @@ import jwt
 from uuid import uuid4
 
 # Local imports
-from database import engine, get_db, SessionLocal
+from database import engine, get_db, SessionLocal, verify_connection
 from shared_auth import (
     get_current_user,
-    require_permission,
-    require_role,
-    get_current_tenant,
-    verify_tenant_access
+    require_super_admin,
+    require_tenant_admin,
+    check_tenant_slug_access,
+    check_permission,
+    safe_tenant_session,
+    validate_tenant_access
 )
-from shared_models import Base
+
+
 
 # Module imports
 from users.endpoints import router as users_router
 from settings.endpoints import router as settings_router
 from tools.endpoints import router as tools_router
+
+# Import models to register them with their respective Base
+from users.models import Base as UsersBase
+from settings.models import Base as SettingsBase
+from tools.models import Base as ToolsBase
 
 # Setup logging
 logging.basicConfig(
@@ -96,13 +104,17 @@ async def lifespan(app: FastAPI):
     try:
         # Create database tables
         logger.info("📊 Initializing database...")
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
+        with engine.begin() as conn:
+            # Create tables for all modules
+            UsersBase.metadata.create_all(conn)
+            SettingsBase.metadata.create_all(conn)
+            ToolsBase.metadata.create_all(conn)
 
         # Verify database connection
-        async with SessionLocal() as session:
-            result = await session.execute(text("SELECT 1"))
+        if verify_connection():
             logger.info("✅ Database connection verified")
+        else:
+            raise Exception("Database connection failed")
 
         # Log module registration
         logger.info("📦 Modules registered:")
@@ -120,7 +132,7 @@ async def lifespan(app: FastAPI):
 
     # Shutdown
     logger.info("👋 Shutting down System Service...")
-    await engine.dispose()
+    engine.dispose()
     logger.info("✅ System Service shut down complete")
 
 
@@ -176,7 +188,7 @@ async def root():
 
 
 @app.get("/health", tags=["Health"])
-async def health_check(db: AsyncSession = Depends(get_db)):
+async def health_check(db: Session = Depends(get_db)):
     """
     Comprehensive health check endpoint
     """
@@ -190,8 +202,8 @@ async def health_check(db: AsyncSession = Depends(get_db)):
 
     # Database check
     try:
-        result = await db.execute(text("SELECT 1"))
-        await db.commit()
+        result = db.execute(text("SELECT 1"))
+        db.commit()
         health_status["checks"]["database"] = {
             "status": "healthy",
             "message": "Database connection successful"
@@ -214,17 +226,17 @@ async def health_check(db: AsyncSession = Depends(get_db)):
 
 
 @app.get("/readiness", tags=["Health"])
-async def readiness_check(db: AsyncSession = Depends(get_db)):
+async def readiness_check(db: Session = Depends(get_db)):
     """
     Readiness check for Kubernetes
     """
     try:
         # Check database
-        result = await db.execute(text("SELECT 1"))
-        await db.commit()
+        result = db.execute(text("SELECT 1"))
+        db.commit()
 
         # Check critical tables exist
-        inspector = inspect(engine.sync_engine)
+        inspector = inspect(engine)
         tables = inspector.get_table_names()
         required_tables = ['users', 'roles', 'settings', 'audit_logs', 'tasks', 'notes']
 
@@ -252,7 +264,7 @@ async def readiness_check(db: AsyncSession = Depends(get_db)):
 async def initialize_tenant_schema(
     tenant_id: str,
     schema_name: str,
-    db: AsyncSession = Depends(get_db)
+    db: Session = Depends(get_db)
 ):
     """
     Initialize database schema for a new tenant
@@ -262,90 +274,154 @@ async def initialize_tenant_schema(
         logger.info(f"Initializing schema for tenant: {tenant_id} with schema name: {schema_name}")
 
         # Create schema if not exists
-        await db.execute(text(f"CREATE SCHEMA IF NOT EXISTS {schema_name}"))
+        db.execute(text(f"CREATE SCHEMA IF NOT EXISTS {schema_name}"))
 
         # Set search path to tenant schema
-        await db.execute(text(f"SET search_path TO {schema_name}, public"))
+        db.execute(text(f"SET search_path TO {schema_name}, public"))
 
         # Create tables in tenant schema
         # Use a transaction to ensure all tables are created with the correct schema context
-        async with engine.begin() as conn:
+        with engine.begin() as conn:
             # Set the schema search path for the connection
-            await conn.execute(text(f"SET search_path TO {schema_name}, public"))
+            conn.execute(text(f"SET search_path TO {schema_name}, public"))
 
             # Create metadata with the schema set
             from sqlalchemy import MetaData
             tenant_metadata = MetaData(schema=schema_name)
 
-            # Reflect the Base metadata to the tenant metadata with the correct schema
-            for table in Base.metadata.tables.values():
-                table.to_metadata(tenant_metadata)
+            # Reflect the Base metadata from all modules to the tenant metadata with the correct schema
+            for base in [UsersBase, SettingsBase, ToolsBase]:
+                for table in base.metadata.tables.values():
+                    table.to_metadata(tenant_metadata)
 
             # Create all tables in the tenant schema
-            await conn.run_sync(tenant_metadata.create_all)
+            tenant_metadata.create_all(conn)
 
-        # Create default admin user
+        # Create default roles and admin user
         from users.models import User, Role, Permission
         from common.enums import UserStatus, PermissionAction, ResourceType
 
-        # Check if admin role exists
-        result = await db.execute(
-            text("SELECT id FROM roles WHERE name = 'admin' LIMIT 1")
+        # Define all required roles
+        roles_to_create = [
+            {
+                "id": str(uuid4()),
+                "name": "admin",
+                "display_name": "Administrator",
+                "description": "Full system access",
+                "is_system": True,
+                "priority": 100
+            },
+            {
+                "id": str(uuid4()),
+                "name": "manager",
+                "display_name": "Manager",
+                "description": "Management level access",
+                "is_system": True,
+                "priority": 80
+            },
+            {
+                "id": str(uuid4()),
+                "name": "agent",
+                "display_name": "Agent",
+                "description": "Sales and booking agent access",
+                "is_system": True,
+                "priority": 60
+            },
+            {
+                "id": str(uuid4()),
+                "name": "accountant",
+                "display_name": "Accountant",
+                "description": "Financial and accounting access",
+                "is_system": True,
+                "priority": 70
+            },
+            {
+                "id": str(uuid4()),
+                "name": "support",
+                "display_name": "Support",
+                "description": "Customer support access",
+                "is_system": True,
+                "priority": 50
+            },
+            {
+                "id": str(uuid4()),
+                "name": "user",
+                "display_name": "User",
+                "description": "Basic user access",
+                "is_system": True,
+                "priority": 30
+            }
+        ]
+
+        # Create all roles
+        admin_role_id = None
+        for role_data in roles_to_create:
+            # Check if role exists
+            result = db.execute(
+                text(f"SELECT id FROM roles WHERE name = :name LIMIT 1"),
+                {"name": role_data["name"]}
+            )
+            existing_role = result.first()
+
+            if not existing_role:
+                db.execute(
+                    text("""
+                        INSERT INTO roles (id, name, display_name, description, is_system, priority)
+                        VALUES (:id, :name, :display_name, :description, :is_system, :priority)
+                    """),
+                    role_data
+                )
+                if role_data["name"] == "admin":
+                    admin_role_id = role_data["id"]
+            else:
+                if role_data["name"] == "admin":
+                    admin_role_id = existing_role.id
+
+        # Ensure we have admin_role_id
+        if not admin_role_id:
+            result = db.execute(
+                text("SELECT id FROM roles WHERE name = 'admin' LIMIT 1")
+            )
+            admin_role_result = result.first()
+            if admin_role_result:
+                admin_role_id = str(admin_role_result.id)
+            else:
+                raise Exception("Admin role not found after creation")
+
+        # Create admin user
+        admin_user_id = str(uuid4())
+        password_hash = bcrypt.hashpw("admin123".encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+
+        db.execute(
+            text("""
+                INSERT INTO users (id, email, username, password_hash, first_name, last_name, status, is_active, is_verified)
+                VALUES (:id, :email, :username, :password_hash, :first_name, :last_name, 'ACTIVE'::userstatus, :is_active, :is_verified)
+            """),
+            {
+                "id": admin_user_id,
+                "email": f"admin@tenant{tenant_id}.com",
+                "username": f"admin_{tenant_id}",
+                "password_hash": password_hash,
+                "first_name": "Admin",
+                "last_name": "User",
+                "is_active": True,
+                "is_verified": True
+            }
         )
-        admin_role = result.first()
 
-        if not admin_role:
-            # Create admin role
-            admin_role_id = str(uuid4())
-            await db.execute(
-                text("""
-                    INSERT INTO roles (id, name, display_name, description, is_system, priority)
-                    VALUES (:id, :name, :display_name, :description, :is_system, :priority)
-                """),
-                {
-                    "id": admin_role_id,
-                    "name": "admin",
-                    "display_name": "Administrator",
-                    "description": "Full system access",
-                    "is_system": True,
-                    "priority": 100
-                }
-            )
+        # Assign admin role to user
+        db.execute(
+            text("""
+                INSERT INTO user_roles (user_id, role_id)
+                VALUES (:user_id, :role_id)
+            """),
+            {
+                "user_id": admin_user_id,
+                "role_id": admin_role_id
+            }
+        )
 
-            # Create admin user
-            admin_user_id = str(uuid4())
-            password_hash = bcrypt.hashpw("admin123".encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-
-            await db.execute(
-                text("""
-                    INSERT INTO users (id, email, username, password_hash, first_name, last_name, status, is_active, is_verified)
-                    VALUES (:id, :email, :username, :password_hash, :first_name, :last_name, 'ACTIVE'::userstatus, :is_active, :is_verified)
-                """),
-                {
-                    "id": admin_user_id,
-                    "email": f"admin@tenant{tenant_id}.com",
-                    "username": f"admin_{tenant_id}",
-                    "password_hash": password_hash,
-                    "first_name": "Admin",
-                    "last_name": "User",
-                    "is_active": True,
-                    "is_verified": True
-                }
-            )
-
-            # Assign admin role to user
-            await db.execute(
-                text("""
-                    INSERT INTO user_roles (user_id, role_id)
-                    VALUES (:user_id, :role_id)
-                """),
-                {
-                    "user_id": admin_user_id,
-                    "role_id": admin_role_id
-                }
-            )
-
-        await db.commit()
+        db.commit()
 
         return {
             "success": True,
@@ -356,7 +432,7 @@ async def initialize_tenant_schema(
         }
 
     except Exception as e:
-        await db.rollback()
+        db.rollback()
         logger.error(f"Failed to initialize tenant schema: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -364,22 +440,20 @@ async def initialize_tenant_schema(
         )
 
 
-def get_current_tenant(request: Request) -> Optional[str]:
-    """Extract tenant ID from request headers"""
-    return request.headers.get("X-Tenant-ID")
+
 
 
 @app.post("/api/v1/auth/verify-tenant", tags=["Authentication"])
 async def verify_tenant_schema_endpoint(
     tenant_id: str,
-    db: AsyncSession = Depends(get_db)
+    db: Session = Depends(get_db)
 ):
     """
     Verify that a tenant's schema exists and is properly configured
     """
     try:
         # Check if schema exists
-        result = await db.execute(
+        result = db.execute(
             text("""
                 SELECT schema_name
                 FROM information_schema.schemata
@@ -396,9 +470,9 @@ async def verify_tenant_schema_endpoint(
             }
 
         # Set search path and check tables
-        await db.execute(text(f"SET search_path TO tenant_{tenant_id}, public"))
+        db.execute(text(f"SET search_path TO tenant_{tenant_id}, public"))
 
-        result = await db.execute(
+        result = db.execute(
             text("""
                 SELECT table_name
                 FROM information_schema.tables
@@ -434,7 +508,7 @@ async def verify_tenant_schema_endpoint(
 async def tenant_login(
     request: LoginRequest,
     tenant_request: Request,
-    db: AsyncSession = Depends(get_db)
+    db: Session = Depends(get_db)
 ):
     """
     Authenticate user within a specific tenant context
@@ -450,10 +524,10 @@ async def tenant_login(
             )
 
         # Set search path to tenant schema
-        await db.execute(text(f"SET search_path TO tenant_{tenant_id}, public"))
+        db.execute(text(f"SET search_path TO tenant_{tenant_id}, public"))
 
         # Find user by email
-        result = await db.execute(
+        result = db.execute(
             text("""
                 SELECT id, email, username, password_hash, status, is_active, is_verified
                 FROM users
@@ -474,7 +548,7 @@ async def tenant_login(
         # Verify password
         if not bcrypt.checkpw(request.password.encode('utf-8'), user.password_hash.encode('utf-8')):
             # Update failed login attempts
-            await db.execute(
+            db.execute(
                 text("""
                     UPDATE users
                     SET failed_login_attempts = failed_login_attempts + 1
@@ -482,7 +556,7 @@ async def tenant_login(
                 """),
                 {"user_id": user.id}
             )
-            await db.commit()
+            db.commit()
 
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -520,7 +594,7 @@ async def tenant_login(
         )
 
         # Update last login
-        await db.execute(
+        db.execute(
             text("""
                 UPDATE users
                 SET last_login_at = :now,
@@ -529,7 +603,7 @@ async def tenant_login(
             """),
             {"now": datetime.utcnow(), "user_id": user.id}
         )
-        await db.commit()
+        db.commit()
 
         return TokenResponse(
             access_token=access_token,
@@ -551,8 +625,8 @@ async def tenant_login(
 
 @app.post("/api/v1/auth/logout", tags=["Authentication"])
 async def logout(
-    current_user: Dict = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
 ):
     """
     Logout user and invalidate session
@@ -567,10 +641,10 @@ async def logout(
         tenant_id = current_user.get("tenant_id")
 
         if tenant_id:
-            await db.execute(text(f"SET search_path TO tenant_{tenant_id}, public"))
+            db.execute(text(f"SET search_path TO tenant_{tenant_id}, public"))
 
             # Update last activity
-            await db.execute(
+            db.execute(
                 text("""
                     UPDATE users
                     SET last_activity_at = :now
@@ -578,7 +652,7 @@ async def logout(
                 """),
                 {"now": datetime.utcnow(), "user_id": user_id}
             )
-            await db.commit()
+            db.commit()
 
         return {
             "success": True,
@@ -664,21 +738,21 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
 # Users module
 app.include_router(
     users_router,
-    prefix="/api/v1/users",
+    prefix="/api/v1/tenants/{tenant_slug}/users",
     tags=["Users"]
 )
 
 # Settings module
 app.include_router(
     settings_router,
-    prefix="/api/v1/settings",
+    prefix="/api/v1/tenants/{tenant_slug}/settings",
     tags=["Settings"]
 )
 
 # Tools module
 app.include_router(
     tools_router,
-    prefix="/api/v1/tools",
+    prefix="/api/v1/tenants/{tenant_slug}/tools",
     tags=["Tools"]
 )
 

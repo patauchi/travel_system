@@ -6,7 +6,7 @@ Contains all tool-related models: Note, Task, LogCall, Attachment, Event, etc.
 from sqlalchemy import (
     Column, String, Integer, Boolean, DateTime, Text, JSON, Date,
     ForeignKey, Table, UniqueConstraint, CheckConstraint, Enum as SQLEnum,
-    DECIMAL, BigInteger, Index
+    DECIMAL, BigInteger
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import UUID, JSONB
@@ -17,9 +17,7 @@ from common.enums import (
     NotePriority, CallType, CallStatus, TaskStatus, TaskPriority,
     DiskType, EventStatus, ChannelType, AssignmentRule
 )
-from sqlalchemy.ext.declarative import declarative_base
-
-Base = declarative_base()
+from shared_models import Base
 
 
 class Note(Base):
@@ -87,9 +85,9 @@ class LogCall(Base):
 
     # Índices
     __table_args__ = (
-        Index('idx_logcalls_logcallable', 'logacallable_type', 'logacallable_id'),
-        Index('idx_logcalls_phone_number', 'phone_number'),
-        Index('idx_logcalls_user_id', 'user_id'),
+        UniqueConstraint('logacallable_type', 'logacallable_id', name='idx_logacalls_logacallable'),
+        UniqueConstraint('phone_number', name='idx_logacalls_phone_number'),
+        UniqueConstraint('user_id', name='idx_logacalls_user_id'),
     )
 
     def __repr__(self):
@@ -132,11 +130,11 @@ class Task(Base):
 
     # Índices
     __table_args__ = (
-        Index('idx_tasks_taskable', 'taskable_type', 'taskable_id'),
-        Index('idx_tasks_status', 'status'),
-        Index('idx_tasks_priority', 'priority'),
-        Index('idx_tasks_due_date', 'due_date'),
-        Index('idx_tasks_assigned_to', 'assigned_to'),
+        UniqueConstraint('taskable_type', 'taskable_id', name='idx_tasks_taskable'),
+        UniqueConstraint('status', name='idx_tasks_status'),
+        UniqueConstraint('priority', name='idx_tasks_priority'),
+        UniqueConstraint('due_date', name='idx_tasks_due_date'),
+        UniqueConstraint('assigned_to', name='idx_tasks_assigned_to'),
     )
 
     def __repr__(self):
@@ -229,10 +227,10 @@ class Event(Base):
 
     # Índices
     __table_args__ = (
-        Index('idx_events_eventable', 'eventable_type', 'eventable_id'),
-        Index('idx_events_status', 'status'),
-        Index('idx_events_start_date', 'start_date'),
-        Index('idx_events_end_date', 'end_date'),
+        UniqueConstraint('eventable_type', 'eventable_id', name='idx_events_eventable'),
+        UniqueConstraint('start_date', name='idx_events_start_date'),
+        UniqueConstraint('organizer_id', name='idx_events_organizer_id'),
+        UniqueConstraint('status', name='idx_events_status'),
     )
 
     def __repr__(self):

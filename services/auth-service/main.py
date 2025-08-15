@@ -249,7 +249,7 @@ async def register(
                     ) VALUES (
                         :id, :email, :username, :password_hash,
                         :first_name, :last_name, :phone,
-                        'active', true, false,
+                        'ACTIVE', true, false,
                         NOW(), NOW()
                     )
                 """),
@@ -406,7 +406,32 @@ async def login(
             row = result.fetchone()
             if row:
                 user_data = row._asdict() if hasattr(row, '_asdict') else dict(row)
-                user_role = user_data.get('role_name', 'user')
+                user_role = user_data.get('role_name')
+
+                # If no role found in tenant schema, check central_tenant_users table
+                if not user_role and auth_ctx.tenant_info:
+                    central_result = db.execute(
+                        text("""
+                            SELECT tu.role
+                            FROM shared.central_tenant_users tu
+                            JOIN shared.central_users u ON tu.user_id = u.id
+                            WHERE u.username = :username
+                            AND tu.tenant_id = :tenant_id
+                            LIMIT 1
+                        """),
+                        {
+                            "username": form_data.username,
+                            "tenant_id": auth_ctx.tenant_info["id"]
+                        }
+                    )
+                    central_row = central_result.fetchone()
+                    if central_row:
+                        user_role = central_row[0]
+
+                # Default to 'user' if still no role found
+                if not user_role:
+                    user_role = 'user'
+
                 tenant_info = auth_ctx.tenant_info
 
                 # Check if account is locked
@@ -523,7 +548,7 @@ async def login(
         # Add type field based on role
         if user_role == "super_admin":
             token_data["type"] = "system"
-        elif user_role in ["tenant_admin", "tenant_user"]:
+        elif user_role in ["admin", "manager", "tenant_admin", "tenant_user"]:
             token_data["type"] = "tenant"
         else:
             token_data["type"] = "user"

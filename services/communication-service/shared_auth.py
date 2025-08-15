@@ -1,12 +1,16 @@
 """
-Shared authentication utilities for all microservices
+Shared authentication and tenant access utilities for all microservices
+Provides JWT authentication, role-based access control, and safe tenant database access
 """
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Generator
 from datetime import datetime, timedelta
 from jose import JWTError, jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from contextlib import contextmanager
+from sqlalchemy.orm import Session
 import os
+import logging
 
 # Configuration
 SECRET_KEY = os.getenv("JWT_SECRET_KEY", "your-secret-key-change-in-production")
@@ -15,6 +19,9 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
 # Security scheme
 security = HTTPBearer(auto_error=False)
+
+# Logger
+logger = logging.getLogger(__name__)
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     """Create a JWT access token"""
@@ -199,3 +206,89 @@ def verify_service_token(token: str) -> Dict[str, Any]:
             detail="Invalid service token"
         )
     return payload
+
+# ============================================
+# TENANT DATABASE ACCESS UTILITIES
+# ============================================
+
+@contextmanager
+def safe_tenant_session(tenant_slug: str) -> Generator[Session, None, None]:
+    """
+    Safely get a tenant database session with proper error handling
+
+    Args:
+        tenant_slug: The tenant slug identifier
+
+    Yields:
+        Session: Database session for the tenant
+
+    Raises:
+        HTTPException: 404 if tenant schema doesn't exist
+        HTTPException: 500 for other database errors
+    """
+    from database import get_tenant_session, schema_exists
+
+    # Convert tenant slug to schema name (replace hyphens with underscores)
+    schema_name = f"tenant_{tenant_slug.replace('-', '_')}"
+
+    # Check if schema exists
+    if not schema_exists(schema_name):
+        logger.warning(f"Attempted to access non-existent tenant schema: {schema_name}")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Tenant not found: {tenant_slug}"
+        )
+
+    try:
+        with get_tenant_session(schema_name) as session:
+            yield session
+    except ValueError as e:
+        # This shouldn't happen if schema_exists check passed, but handle it anyway
+        logger.error(f"ValueError accessing tenant {tenant_slug}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Tenant not found: {tenant_slug}"
+        )
+    except Exception as e:
+        # Log the actual error for debugging
+        logger.error(f"Database error for tenant {tenant_slug}: {str(e)}")
+        # Don't expose internal error details to the client
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred while processing the request"
+        )
+
+
+def validate_tenant_access(user: dict, tenant_slug: str) -> None:
+    """
+    Validate that a user has access to a tenant
+
+    Args:
+        user: The current user dictionary
+        tenant_slug: The tenant slug to access
+
+    Raises:
+        HTTPException: 403 if user doesn't have access to the tenant
+    """
+    if not check_tenant_slug_access(user, tenant_slug):
+        logger.warning(
+            f"User {user.get('username', user.get('id'))} attempted to access "
+            f"tenant {tenant_slug} without permission"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Access denied to tenant: {tenant_slug}"
+        )
+
+
+def get_tenant_schema_name(tenant_slug: str) -> str:
+    """
+    Convert tenant slug to schema name
+
+    Args:
+        tenant_slug: The tenant slug
+
+    Returns:
+        str: The schema name
+    """
+    return f"tenant_{tenant_slug.replace('-', '_')}"

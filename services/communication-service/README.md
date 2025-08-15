@@ -27,28 +27,35 @@ communication-service/
 ├── main.py                # FastAPI application entry point
 ├── database.py            # Database connection and session management
 ├── schema_manager.py      # Multi-tenant schema management
-├── shared_auth.py         # Shared authentication system
+├── shared_auth.py         # Unified authentication and tenant access system
 ├── requirements.txt       # Python dependencies
 └── Dockerfile            # Container configuration
 ```
 
 ## 🔐 Authentication & Security
 
-This service implements JWT-based authentication with role-based access control:
+This service implements JWT-based authentication with role-based access control and comprehensive security measures through a unified security module:
 
-### Authentication Features
+### Security Features
 - **JWT Token Validation**: All protected endpoints require valid JWT tokens
 - **Multi-Tenant Access Control**: Users can only access their assigned tenant data
+- **Schema Validation**: Tenant existence verification before database access
+- **Secure Error Handling**: No information leakage in error responses
 - **Role-Based Permissions**: Support for `super_admin`, `tenant_admin`, and `tenant_user` roles
 - **Service-to-Service Auth**: Internal service communication via service tokens
 
-### Protected Endpoints
-All main endpoints require authentication:
+### Security Improvements
+- ✅ **Unified Security Module**: All authentication and tenant access logic in one place (`shared_auth.py`)
+- ✅ **Tenant Isolation**: Complete data separation with schema validation
+- ✅ **Error Response Codes**: Proper HTTP status codes (401, 403, 404) instead of generic 500
+- ✅ **Safe Database Access**: Integrated functions for secure tenant session management
+- ✅ **Centralized Validation**: Consistent access control across all endpoints
 
-- ✅ **Conversations**: Require `conversations.read` permission
-- ✅ **Messages**: Require `messages.read` permission  
-- ✅ **Chat Channels**: Require `channels.read` permission
-- ✅ **Quick Replies**: Require admin role for management
+### Protected Endpoints
+All main endpoints require authentication and return:
+- `401 Unauthorized` - No valid authentication token
+- `403 Forbidden` - Valid token but no access to resource
+- `404 Not Found` - Tenant or resource doesn't exist
 
 ### Authentication Testing Endpoints
 - `GET /api/v1/auth/test` - Test basic authentication
@@ -113,45 +120,44 @@ Authorization: Bearer <your-jwt-token>
 ### Inbox Endpoints
 
 #### Conversations
-- `POST /api/v1/communications/conversations?tenant_slug={slug}` - Create new conversation ⚡ **AUTH REQUIRED**
-- `GET /api/v1/communications/conversations?tenant_slug={slug}` - List conversations ⚡ **AUTH REQUIRED**
-- `GET /api/v1/communications/conversations/{id}?tenant_slug={slug}` - Get conversation details
-- `PUT /api/v1/communications/conversations/{id}?tenant_slug={slug}` - Update conversation
-- `POST /api/v1/communications/conversations/{id}/assign?tenant_slug={slug}` - Assign to user
-- `POST /api/v1/communications/conversations/{id}/qualify?tenant_slug={slug}` - Qualify as lead
-- `DELETE /api/v1/communications/conversations/{id}?tenant_slug={slug}` - Archive conversation
+- `POST /api/v1/tenants/{tenant_slug}/conversations/` - Create new conversation ⚡ **AUTH REQUIRED**
+- `GET /api/v1/tenants/{tenant_slug}/conversations/` - List conversations ⚡ **AUTH REQUIRED**
+- `GET /api/v1/tenants/{tenant_slug}/conversations/{id}` - Get conversation details
+- `PUT /api/v1/tenants/{tenant_slug}/conversations/{id}` - Update conversation
+- `POST /api/v1/tenants/{tenant_slug}/conversations/{id}/assign` - Assign to user
+- `POST /api/v1/tenants/{tenant_slug}/conversations/{id}/qualify` - Qualify as lead
+- `DELETE /api/v1/tenants/{tenant_slug}/conversations/{id}` - Delete conversation
 
 #### Messages
-- `POST /api/v1/communications/messages?tenant_slug={slug}` - Send message
-- `GET /api/v1/communications/messages/conversation/{id}?tenant_slug={slug}` - List messages
-- `PUT /api/v1/communications/messages/{id}/status?tenant_slug={slug}` - Update status
+- `POST /api/v1/tenants/{tenant_slug}/messages/` - Send message
+- `GET /api/v1/tenants/{tenant_slug}/messages/conversation/{id}` - List messages
+- `PUT /api/v1/tenants/{tenant_slug}/messages/{id}` - Update status
+- `DELETE /api/v1/tenants/{tenant_slug}/messages/{id}` - Delete message
 
 #### Quick Replies
-- `POST /api/v1/communications/quick-replies?tenant_slug={slug}` - Create template
-- `GET /api/v1/communications/quick-replies?tenant_slug={slug}` - List templates
-- `PUT /api/v1/communications/quick-replies/{id}?tenant_slug={slug}` - Update template
-- `POST /api/v1/communications/quick-replies/{id}/use?tenant_slug={slug}` - Use template
+- `POST /api/v1/tenants/{tenant_slug}/quick-replies/` - Create template
+- `GET /api/v1/tenants/{tenant_slug}/quick-replies/` - List templates
+- `GET /api/v1/tenants/{tenant_slug}/quick-replies/{id}` - Get specific template
+- `PUT /api/v1/tenants/{tenant_slug}/quick-replies/{id}` - Update template
+- `DELETE /api/v1/tenants/{tenant_slug}/quick-replies/{id}` - Delete template
 
 ### Chat Endpoints
 
 #### Channels
-- `POST /api/v1/communications/channels?tenant_slug={slug}` - Create channel
-- `GET /api/v1/communications/channels?tenant_slug={slug}` - List channels
-- `GET /api/v1/communications/channels/{id}?tenant_slug={slug}` - Get channel details
-- `PUT /api/v1/communications/channels/{id}?tenant_slug={slug}` - Update channel
-- `DELETE /api/v1/communications/channels/{id}?tenant_slug={slug}` - Delete channel
+- `POST /api/v1/tenants/{tenant_slug}/channels/` - Create channel
+- `GET /api/v1/tenants/{tenant_slug}/channels/` - List channels
+- `GET /api/v1/tenants/{tenant_slug}/channels/{id}` - Get channel details
+- `PUT /api/v1/tenants/{tenant_slug}/channels/{id}` - Update channel
+- `DELETE /api/v1/tenants/{tenant_slug}/channels/{id}` - Delete channel
 
 #### Channel Members
-- `POST /api/v1/communications/channels/{id}/members?tenant_slug={slug}` - Add member
-- `GET /api/v1/communications/channels/{id}/members?tenant_slug={slug}` - List members
-- `PUT /api/v1/communications/channels/{id}/members/{user_id}?tenant_slug={slug}` - Update member
-- `DELETE /api/v1/communications/channels/{id}/members/{user_id}?tenant_slug={slug}` - Remove member
+- `POST /api/v1/tenants/{tenant_slug}/channels/{id}/members` - Add member
+- `GET /api/v1/tenants/{tenant_slug}/channels/{id}/members` - List members
 
 #### Chat Messages
-- `POST /api/v1/communications/chat/channels/{id}/messages?tenant_slug={slug}` - Send message
-- `GET /api/v1/communications/chat/channels/{id}/messages?tenant_slug={slug}` - List messages
-- `PUT /api/v1/communications/chat/messages/{id}?tenant_slug={slug}` - Edit message
-- `POST /api/v1/communications/chat/messages/{id}/reactions?tenant_slug={slug}` - Add reaction
+- `POST /api/v1/tenants/{tenant_slug}/chat/channels/{id}/messages` - Send message
+- `GET /api/v1/tenants/{tenant_slug}/chat/channels/{id}/messages` - List messages
+- `POST /api/v1/tenants/{tenant_slug}/chat/messages/{id}/reactions` - Add reaction
 
 ## 🔧 Configuration
 
@@ -179,42 +185,59 @@ SENDGRID_API_KEY=your_sendgrid_key
 
 ## 🔐 Authentication Integration
 
-### Shared Authentication System
+### Unified Security Module
 
-The service uses a shared authentication system located in `shared_auth.py` that provides:
+The service uses a unified security module located in `shared_auth.py` that provides both authentication and safe tenant access:
 
 - **JWT Token Validation**: Secure token verification across all endpoints
 - **Role-Based Access Control**: Support for different user roles
 - **Multi-Tenant Isolation**: Automatic tenant access validation
+- **Safe Database Sessions**: Integrated tenant session management with error handling
 - **Service-to-Service Auth**: Internal service communication
 
-### Authentication Functions
+### Security Functions
 
 ```python
 from shared_auth import (
+    # Authentication functions
     get_current_user,           # Require any authenticated user
     require_super_admin,        # Require super admin role
     require_tenant_admin,       # Require tenant admin role
     check_tenant_slug_access,   # Validate tenant access
-    check_permission           # Check specific permissions
+    check_permission,           # Check specific permissions
+    
+    # Tenant database access functions
+    safe_tenant_session,        # Safe database session with error handling
+    validate_tenant_access,     # Centralized tenant access validation
+    get_tenant_schema_name      # Convert slug to schema name
 )
 ```
 
 ### Example Protected Endpoint
 
 ```python
-@router.post("/conversations")
+from shared_auth import (
+    get_current_user,
+    safe_tenant_session,
+    validate_tenant_access
+)
+
+@router.post("/")
 async def create_conversation(
     conversation_data: ConversationCreate,
-    tenant_slug: str = Query(...),
+    tenant_slug: str,  # Path parameter from /api/v1/tenants/{tenant_slug}/conversations/
     current_user: Dict[str, Any] = Depends(get_current_user)
 ):
-    # Validate tenant access
-    if not check_tenant_slug_access(current_user, tenant_slug):
-        raise HTTPException(status_code=403, detail="Access denied")
+    # Validate tenant access (raises 403 if no access)
+    validate_tenant_access(current_user, tenant_slug)
     
-    # Your business logic here
-    return {"status": "success"}
+    # Safe database session (raises 404 if tenant doesn't exist)
+    with safe_tenant_session(tenant_slug) as db:
+        # Your database operations here
+        conversation = InboxConversation(**conversation_data.dict())
+        db.add(conversation)
+        db.flush()
+        return conversation
 ```
 
 ## 🏗️ Installation & Setup
@@ -297,13 +320,24 @@ curl -H "Authorization: Bearer YOUR_TOKEN" \
 # Should fail (403) for wrong tenant
 curl -H "Authorization: Bearer YOUR_TOKEN" \
      http://localhost:8005/api/v1/tenants/other/auth/test
+
+# Should fail (404) for non-existent tenant
+curl -H "Authorization: Bearer YOUR_TOKEN" \
+     http://localhost:8005/api/v1/tenants/nonexistent/auth/test
 ```
 
 ### Test Protected Endpoints
 ```bash
 # List conversations (requires auth + tenant access)
 curl -H "Authorization: Bearer YOUR_TOKEN" \
-     "http://localhost:8005/api/v1/communications/conversations/?tenant_slug=demo"
+     http://localhost:8005/api/v1/tenants/demo/conversations/
+
+# Should fail (401) without token
+curl http://localhost:8005/api/v1/tenants/demo/conversations/
+
+# Should fail (403) for wrong tenant
+curl -H "Authorization: Bearer YOUR_TOKEN" \
+     http://localhost:8005/api/v1/tenants/other-tenant/conversations/
 ```
 
 ## 🔄 Integration Points
@@ -344,22 +378,26 @@ Integrates with:
 ### Authentication Integration Pattern
 
 ```python
-# 1. Import authentication
-from shared_auth import get_current_user, check_tenant_slug_access
+# 1. Import unified security module
+from shared_auth import (
+    get_current_user,
+    safe_tenant_session,
+    validate_tenant_access
+)
 
-# 2. Add to endpoint
+# 2. Add to endpoint (tenant_slug is now a path parameter)
+@router.get("/")
 async def my_endpoint(
-    tenant_slug: str = Query(...),
+    tenant_slug: str,  # Path parameter from URL
     current_user: Dict[str, Any] = Depends(get_current_user)
 ):
-    # 3. Validate tenant access
-    if not check_tenant_slug_access(current_user, tenant_slug):
-        raise HTTPException(status_code=403, detail="Access denied")
+    # 3. Validate tenant access (raises 403 if no access)
+    validate_tenant_access(current_user, tenant_slug)
     
-    # 4. Get database session manually (after validation)
-    from database import get_tenant_session
-    with get_tenant_session(f"tenant_{tenant_slug}") as db:
+    # 4. Get safe database session (raises 404 if tenant doesn't exist)
+    with safe_tenant_session(tenant_slug) as db:
         # Your database operations here
+        # Errors are handled automatically
         pass
 ```
 
@@ -370,14 +408,19 @@ async def my_endpoint(
 pytest tests/
 ```
 
-### Integration Tests
+### Security Tests
 ```bash
-# Test authentication
-curl http://localhost:8005/api/v1/auth/test
-
-# Test tenant access
-curl http://localhost:8005/api/v1/tenants/demo/auth/test
+# Run comprehensive security tests
+cd tests/security/communication-service
+./run_test.sh
 ```
+
+The security tests validate:
+1. **Authentication Requirements**: Endpoints reject unauthenticated requests (401)
+2. **Authorization Control**: Users cannot access other tenants (403)
+3. **Tenant Validation**: Non-existent tenants return 404 (not 500)
+4. **Cross-Tenant Isolation**: Complete data separation between tenants
+5. **Error Handling**: No information leakage in error responses
 
 ## 📚 API Documentation
 
@@ -436,6 +479,7 @@ See `MIGRATION_GUIDE.md` for detailed instructions on how to migrate other servi
 
 ---
 
-**Status**: ✅ Production Ready with Authentication
+**Status**: ✅ Production Ready with Enhanced Security
 **Architecture**: 🏗️ Modular, Scalable, Maintainable
-**Security**: 🔐 JWT + Multi-Tenant Access Control
+**Security**: 🔐 JWT + Multi-Tenant Access Control + Schema Validation
+**Testing**: ✅ Comprehensive Security Test Suite

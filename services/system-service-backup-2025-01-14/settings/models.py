@@ -12,9 +12,7 @@ from sqlalchemy.dialects.postgresql import UUID, JSONB, INET
 from datetime import datetime
 import uuid
 
-from sqlalchemy.ext.declarative import declarative_base
-
-Base = declarative_base()
+from shared_models import Base
 
 
 class Setting(Base):

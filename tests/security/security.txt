@@ -1,0 +1,1 @@
+Vamos a crear tests  en security/ en subfolder cada service. Cada subfolder debe tener dos archivos test_[service].py, y run_test.sh. En estos estes vamos a probar primero la creación de un tenant, luego de la creación. Se autentica el user en su tenant. Y luego pruebas los endpoints con y sin Token Authentication. Primero hagamos para communication-service.

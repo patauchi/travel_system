@@ -13,9 +13,7 @@ from datetime import datetime
 import uuid
 
 from common.enums import UserStatus, PermissionAction, ResourceType
-from sqlalchemy.ext.declarative import declarative_base
-
-Base = declarative_base()
+from shared_models import Base
 
 # Association Tables
 role_permissions = Table(

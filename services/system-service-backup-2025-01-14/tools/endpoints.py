@@ -11,7 +11,7 @@ from uuid import UUID
 from datetime import datetime, date
 
 from database import get_db
-from shared_auth import get_current_user, check_permission, validate_tenant_access
+from shared_auth import get_current_user, require_permission, get_current_tenant
 from .models import Note, Task, LogCall, Attachment, Event, CarbonFootprint, ChannelConfig, Review
 from .schemas import (
     NoteCreate, NoteUpdate, NoteResponse, NoteFilter,
@@ -34,14 +34,11 @@ router = APIRouter()
 @router.post("/notes", response_model=NoteResponse, status_code=status.HTTP_201_CREATED)
 async def create_note(
     note_data: NoteCreate,
-    tenant_slug: str,
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    current_user = Depends(get_current_user),
+    tenant_id: str = Depends(get_current_tenant)
 ):
     """Create a new note"""
-    # Validate tenant access first
-    validate_tenant_access(current_user, tenant_slug)
-
     db_note = Note(
         title=note_data.title,
         content=note_data.content,
@@ -49,7 +46,7 @@ async def create_note(
         notable_type=note_data.notable_type,
         priority=note_data.priority,
         assigned_to=note_data.assigned_to,
-        created_by=current_user.get("user_id") or current_user.get("id")
+        created_by=current_user.id
     )
 
     db.add(db_note)
@@ -61,7 +58,6 @@ async def create_note(
 
 @router.get("/notes", response_model=List[NoteResponse])
 async def list_notes(
-    tenant_slug: str,
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
     priority: Optional[str] = Query(None),
@@ -71,12 +67,10 @@ async def list_notes(
     created_by: Optional[UUID] = Query(None),
     search: Optional[str] = Query(None),
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    current_user = Depends(get_current_user),
+    tenant_id: str = Depends(get_current_tenant)
 ):
     """List notes with filtering and pagination"""
-    # Validate tenant access first
-    validate_tenant_access(current_user, tenant_slug)
-
     query = db.query(Note)
 
     # Apply filters
@@ -114,14 +108,11 @@ async def list_notes(
 @router.get("/notes/{note_id}", response_model=NoteResponse)
 async def get_note(
     note_id: int,
-    tenant_slug: str,
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    current_user = Depends(get_current_user),
+    tenant_id: str = Depends(get_current_tenant)
 ):
     """Get a specific note by ID"""
-    # Validate tenant access first
-    validate_tenant_access(current_user, tenant_slug)
-
     note = db.query(Note).filter(Note.id == note_id).first()
     if not note:
         raise HTTPException(
@@ -135,14 +126,11 @@ async def get_note(
 async def update_note(
     note_id: int,
     note_data: NoteUpdate,
-    tenant_slug: str,
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    current_user = Depends(get_current_user),
+    tenant_id: str = Depends(get_current_tenant)
 ):
     """Update a note"""
-    # Validate tenant access first
-    validate_tenant_access(current_user, tenant_slug)
-
     db_note = db.query(Note).filter(Note.id == note_id).first()
     if not db_note:
         raise HTTPException(
@@ -164,14 +152,11 @@ async def update_note(
 @router.delete("/notes/{note_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_note(
     note_id: int,
-    tenant_slug: str,
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    current_user = Depends(get_current_user),
+    tenant_id: str = Depends(get_current_tenant)
 ):
     """Delete a note"""
-    # Validate tenant access first
-    validate_tenant_access(current_user, tenant_slug)
-
     db_note = db.query(Note).filter(Note.id == note_id).first()
     if not db_note:
         raise HTTPException(
@@ -190,14 +175,11 @@ async def delete_note(
 @router.post("/tasks", response_model=TaskResponse, status_code=status.HTTP_201_CREATED)
 async def create_task(
     task_data: TaskCreate,
-    tenant_slug: str,
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    current_user = Depends(get_current_user),
+    tenant_id: str = Depends(get_current_tenant)
 ):
     """Create a new task"""
-    # Validate tenant access first
-    validate_tenant_access(current_user, tenant_slug)
-
     db_task = Task(
         title=task_data.title,
         description=task_data.description,
@@ -207,7 +189,7 @@ async def create_task(
         taskable_id=task_data.taskable_id,
         taskable_type=task_data.taskable_type,
         assigned_to=task_data.assigned_to,
-        created_by=current_user.get("user_id") or current_user.get("id")
+        created_by=current_user.id
     )
 
     db.add(db_task)
@@ -219,20 +201,20 @@ async def create_task(
 
 @router.get("/tasks", response_model=List[TaskResponse])
 async def list_tasks(
-    tenant_slug: str,
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
     status: Optional[str] = Query(None),
     priority: Optional[str] = Query(None),
     assigned_to: Optional[UUID] = Query(None),
-    assigned_by: Optional[UUID] = Query(None),
-    related_entity_type: Optional[str] = Query(None),
-    related_entity_id: Optional[int] = Query(None),
-    due_before: Optional[date] = Query(None),
-    due_after: Optional[date] = Query(None),
+    created_by: Optional[UUID] = Query(None),
+    due_from: Optional[date] = Query(None),
+    due_to: Optional[date] = Query(None),
+    taskable_type: Optional[str] = Query(None),
+    taskable_id: Optional[int] = Query(None),
     search: Optional[str] = Query(None),
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    current_user = Depends(get_current_user),
+    tenant_id: str = Depends(get_current_tenant)
 ):
     """List tasks with filtering and pagination"""
     query = db.query(Task).filter(Task.deleted_at.is_(None))
@@ -281,9 +263,9 @@ async def list_tasks(
 @router.get("/tasks/{task_id}", response_model=TaskResponse)
 async def get_task(
     task_id: int,
-    tenant_slug: str,
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    current_user = Depends(get_current_user),
+    tenant_id: str = Depends(get_current_tenant)
 ):
     """Get a specific task by ID"""
     task = db.query(Task).filter(and_(Task.id == task_id, Task.deleted_at.is_(None))).first()
@@ -299,9 +281,9 @@ async def get_task(
 async def update_task(
     task_id: int,
     task_data: TaskUpdate,
-    tenant_slug: str,
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    current_user = Depends(get_current_user),
+    tenant_id: str = Depends(get_current_tenant)
 ):
     """Update a task"""
     db_task = db.query(Task).filter(and_(Task.id == task_id, Task.deleted_at.is_(None))).first()
@@ -325,9 +307,9 @@ async def update_task(
 @router.delete("/tasks/{task_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_task(
     task_id: int,
-    tenant_slug: str,
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    current_user = Depends(get_current_user),
+    tenant_id: str = Depends(get_current_tenant)
 ):
     """Soft delete a task"""
     db_task = db.query(Task).filter(and_(Task.id == task_id, Task.deleted_at.is_(None))).first()
@@ -349,9 +331,9 @@ async def delete_task(
 @router.post("/logcalls", response_model=LogCallResponse, status_code=status.HTTP_201_CREATED)
 async def create_logcall(
     logcall_data: LogCallCreate,
-    tenant_slug: str,
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    current_user = Depends(get_current_user),
+    tenant_id: str = Depends(get_current_tenant)
 ):
     """Create a new call log"""
     db_logcall = LogCall(
@@ -361,7 +343,7 @@ async def create_logcall(
         notes=logcall_data.notes,
         logacallable_id=logcall_data.logacallable_id,
         logacallable_type=logcall_data.logacallable_type,
-        user_id=current_user.get("user_id") or current_user.get("id")
+        user_id=current_user.id
     )
 
     db.add(db_logcall)
@@ -373,7 +355,6 @@ async def create_logcall(
 
 @router.get("/logcalls", response_model=List[LogCallResponse])
 async def list_logcalls(
-    tenant_slug: str,
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
     call_type: Optional[str] = Query(None),
@@ -383,7 +364,8 @@ async def list_logcalls(
     logacallable_type: Optional[str] = Query(None),
     logacallable_id: Optional[int] = Query(None),
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    current_user = Depends(get_current_user),
+    tenant_id: str = Depends(get_current_tenant)
 ):
     """List call logs with filtering and pagination"""
     query = db.query(LogCall).filter(LogCall.deleted_at.is_(None))
@@ -417,9 +399,9 @@ async def list_logcalls(
 @router.get("/logcalls/{logcall_id}", response_model=LogCallResponse)
 async def get_logcall(
     logcall_id: int,
-    tenant_slug: str,
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    current_user = Depends(get_current_user),
+    tenant_id: str = Depends(get_current_tenant)
 ):
     """Get a specific call log by ID"""
     logcall = db.query(LogCall).filter(and_(LogCall.id == logcall_id, LogCall.deleted_at.is_(None))).first()
@@ -438,9 +420,9 @@ async def get_logcall(
 @router.post("/events", response_model=EventResponse, status_code=status.HTTP_201_CREATED)
 async def create_event(
     event_data: EventCreate,
-    tenant_slug: str,
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    current_user = Depends(get_current_user),
+    tenant_id: str = Depends(get_current_tenant)
 ):
     """Create a new event"""
     db_event = Event(
@@ -454,7 +436,7 @@ async def create_event(
         notes=event_data.notes,
         eventable_id=event_data.eventable_id,
         eventable_type=event_data.eventable_type,
-        organizer_id=current_user.get("user_id") or current_user.get("id")
+        organizer_id=current_user.id
     )
 
     db.add(db_event)
@@ -466,7 +448,6 @@ async def create_event(
 
 @router.get("/events", response_model=List[EventResponse])
 async def list_events(
-    tenant_slug: str,
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
     status: Optional[str] = Query(None),
@@ -477,7 +458,8 @@ async def list_events(
     eventable_id: Optional[int] = Query(None),
     search: Optional[str] = Query(None),
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    current_user = Depends(get_current_user),
+    tenant_id: str = Depends(get_current_tenant)
 ):
     """List events with filtering and pagination"""
     query = db.query(Event).filter(Event.deleted_at.is_(None))
@@ -521,9 +503,9 @@ async def list_events(
 @router.get("/events/{event_id}", response_model=EventResponse)
 async def get_event(
     event_id: int,
-    tenant_slug: str,
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    current_user = Depends(get_current_user),
+    tenant_id: str = Depends(get_current_tenant)
 ):
     """Get a specific event by ID"""
     event = db.query(Event).filter(and_(Event.id == event_id, Event.deleted_at.is_(None))).first()
@@ -542,9 +524,9 @@ async def get_event(
 @router.post("/channel-configs", response_model=ChannelConfigResponse, status_code=status.HTTP_201_CREATED)
 async def create_channel_config(
     config_data: ChannelConfigCreate,
-    tenant_slug: str,
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    current_user = Depends(get_current_user),
+    tenant_id: str = Depends(get_current_tenant)
 ):
     """Create a new channel configuration"""
     # Check if channel config already exists for this channel
@@ -576,13 +558,13 @@ async def create_channel_config(
 
 @router.get("/channel-configs", response_model=List[ChannelConfigResponse])
 async def list_channel_configs(
-    tenant_slug: str,
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
     channel: Optional[str] = Query(None),
     is_active: Optional[bool] = Query(None),
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    current_user = Depends(get_current_user),
+    tenant_id: str = Depends(get_current_tenant)
 ):
     """List channel configurations with filtering and pagination"""
     query = db.query(ChannelConfig)
@@ -605,9 +587,9 @@ async def list_channel_configs(
 @router.put("/tasks/bulk-update", response_model=BulkTaskUpdateResult)
 async def bulk_update_tasks(
     bulk_data: BulkTaskUpdate,
-    tenant_slug: str,
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    current_user = Depends(get_current_user),
+    tenant_id: str = Depends(get_current_tenant)
 ):
     """Bulk update multiple tasks"""
     result = BulkTaskUpdateResult(updated_count=0, failed_count=0, errors=[])
@@ -641,9 +623,9 @@ async def bulk_update_tasks(
 @router.put("/notes/bulk-update", response_model=BulkNoteUpdateResult)
 async def bulk_update_notes(
     bulk_data: BulkNoteUpdate,
-    tenant_slug: str,
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    current_user = Depends(get_current_user),
+    tenant_id: str = Depends(get_current_tenant)
 ):
     """Bulk update multiple notes"""
     result = BulkNoteUpdateResult(updated_count=0, failed_count=0, errors=[])

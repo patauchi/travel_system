@@ -82,7 +82,14 @@ def get_tenant_session(schema_name: str):
 
     Yields:
         Session: Database session for the tenant
+
+    Raises:
+        ValueError: If the schema does not exist
     """
+    # First check if the schema exists
+    if not schema_exists(schema_name):
+        raise ValueError(f"Tenant schema '{schema_name}' does not exist")
+
     engine = get_tenant_engine(schema_name)
     SessionLocal = sessionmaker(bind=engine)
     session = SessionLocal()

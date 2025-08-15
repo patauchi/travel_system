@@ -110,7 +110,7 @@ class UserResponse(BaseModel):
     email_verified_at: Optional[datetime]
     last_login_at: Optional[datetime]
     last_activity_at: Optional[datetime]
-    two_factor_enabled: Optional[bool] = False
+    two_factor_enabled: bool
     created_at: datetime
     updated_at: datetime
     roles: Optional[List['RoleResponse']] = []
@@ -160,12 +160,12 @@ class RoleResponse(BaseModel):
     name: str
     display_name: str
     description: Optional[str]
-    is_system: bool = False
-    is_active: Optional[bool] = True
-    priority: int = 0
+    is_system: bool
+    is_active: bool
+    priority: int
     max_users: Optional[int]
-    created_at: Optional[datetime]
-    updated_at: Optional[datetime]
+    created_at: datetime
+    updated_at: datetime
     permissions: Optional[List['PermissionResponse']] = []
 
     class Config:
@@ -246,9 +246,9 @@ class TeamResponse(BaseModel):
     description: Optional[str]
     parent_team_id: Optional[UUID]
     team_lead_id: Optional[UUID]
-    is_active: Optional[bool] = True
-    created_at: Optional[datetime]
-    updated_at: Optional[datetime]
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
     members: Optional[List['UserResponse']] = []
     subteams: Optional[List['TeamResponse']] = []
 
