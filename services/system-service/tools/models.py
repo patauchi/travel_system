@@ -6,7 +6,7 @@ Contains all tool-related models: Note, Task, LogCall, Attachment, Event, etc.
 from sqlalchemy import (
     Column, String, Integer, Boolean, DateTime, Text, JSON, Date,
     ForeignKey, Table, UniqueConstraint, CheckConstraint, Enum as SQLEnum,
-    DECIMAL, BigInteger
+    DECIMAL, BigInteger, Index
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import UUID, JSONB
@@ -23,6 +23,7 @@ from shared_models import Base
 class Note(Base):
     """Notes and documentation system - Based on Laravel migration"""
     __tablename__ = "notes"
+    __table_args__ = {'extend_existing': True}
 
     id = Column(BigInteger, primary_key=True, autoincrement=True)
     title = Column(String(191), nullable=True)  # Límite para índices
@@ -66,8 +67,9 @@ class Note(Base):
 
 
 class LogCall(Base):
-    """Call logging and tracking system - Based on Laravel migration"""
-    __tablename__ = "logacalls"
+    """Call logging system - Based on Laravel migration"""
+    __tablename__ = "log_calls"
+    __table_args__ = {'extend_existing': True}
 
     id = Column(BigInteger, primary_key=True, autoincrement=True)
     phone_number = Column(String(255), nullable=False)
@@ -83,9 +85,9 @@ class LogCall(Base):
 
     # Índices
     __table_args__ = (
-        UniqueConstraint('logacallable_type', 'logacallable_id', name='idx_logacalls_logacallable'),
-        UniqueConstraint('phone_number', name='idx_logacalls_phone_number'),
-        UniqueConstraint('user_id', name='idx_logacalls_user_id'),
+        Index('idx_logcalls_logcallable', 'logacallable_type', 'logacallable_id'),
+        Index('idx_logcalls_phone_number', 'phone_number'),
+        Index('idx_logcalls_user_id', 'user_id'),
     )
 
     def __repr__(self):
@@ -109,6 +111,7 @@ class LogCall(Base):
 class Task(Base):
     """Task management system - Based on Laravel migration"""
     __tablename__ = "tasks"
+    __table_args__ = {'extend_existing': True}
 
     id = Column(BigInteger, primary_key=True, autoincrement=True)
     title = Column(String(255), nullable=False)
@@ -127,11 +130,11 @@ class Task(Base):
 
     # Índices
     __table_args__ = (
-        UniqueConstraint('taskable_type', 'taskable_id', name='idx_tasks_taskable'),
-        UniqueConstraint('status', name='idx_tasks_status'),
-        UniqueConstraint('priority', name='idx_tasks_priority'),
-        UniqueConstraint('due_date', name='idx_tasks_due_date'),
-        UniqueConstraint('assigned_to', name='idx_tasks_assigned_to'),
+        Index('idx_tasks_taskable', 'taskable_type', 'taskable_id'),
+        Index('idx_tasks_status', 'status'),
+        Index('idx_tasks_priority', 'priority'),
+        Index('idx_tasks_due_date', 'due_date'),
+        Index('idx_tasks_assigned_to', 'assigned_to'),
     )
 
     def __repr__(self):
@@ -158,6 +161,7 @@ class Task(Base):
 class Attachment(Base):
     """File attachment system - Based on Laravel migration"""
     __tablename__ = "attachments"
+    __table_args__ = {'extend_existing': True}
 
     id = Column(BigInteger, primary_key=True, autoincrement=True)
     original_name = Column(String(255), nullable=False)  # Nombre original del archivo
@@ -201,8 +205,9 @@ class Attachment(Base):
 
 
 class Event(Base):
-    """Event management system - Based on Laravel migration"""
+    """Calendar event system - Based on Laravel migration"""
     __tablename__ = "events"
+    __table_args__ = {'extend_existing': True}
 
     id = Column(BigInteger, primary_key=True, autoincrement=True)
     title = Column(String(255), nullable=False)
@@ -222,10 +227,10 @@ class Event(Base):
 
     # Índices
     __table_args__ = (
-        UniqueConstraint('eventable_type', 'eventable_id', name='idx_events_eventable'),
-        UniqueConstraint('start_date', name='idx_events_start_date'),
-        UniqueConstraint('organizer_id', name='idx_events_organizer_id'),
-        UniqueConstraint('status', name='idx_events_status'),
+        Index('idx_events_eventable', 'eventable_type', 'eventable_id'),
+        Index('idx_events_status', 'status'),
+        Index('idx_events_start_date', 'start_date'),
+        Index('idx_events_end_date', 'end_date'),
     )
 
     def __repr__(self):
@@ -322,9 +327,10 @@ class ChannelConfig(Base):
 
     # Índices
     __table_args__ = (
-        UniqueConstraint('channel', name='idx_channel_configs_channel'),
-        UniqueConstraint('is_active', name='idx_channel_configs_is_active'),
-        UniqueConstraint('channel', 'is_active', name='idx_channel_configs_channel_active'),
+        Index('idx_channel_configs_channel', 'channel'),
+        Index('idx_channel_configs_is_active', 'is_active'),
+        Index('idx_channel_configs_created', 'created_at'),
+        {'extend_existing': True}
     )
 
     def __repr__(self):

@@ -1,73 +1,78 @@
 """
-System Service - Manages tenant-specific users, roles, permissions, and settings
-This service handles all tenant-level user management and configuration using modular architecture
+System Service - Main Application
+Provides user management, settings, and administrative tools
+Following modular architecture pattern
 """
 
-from fastapi import FastAPI, Depends, HTTPException, status, Request
+from fastapi import FastAPI, HTTPException, Depends, status, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
-from sqlalchemy.orm import Session
-from sqlalchemy import text
+from sqlalchemy import text, inspect
+from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
-import os
 import logging
-from pydantic import BaseModel, EmailStr, Field, validator
+import os
+from pydantic import BaseModel, validator
+import bcrypt
+import jwt
+from uuid import uuid4
 
-# Import modular components
-from database import get_db, engine
-from dependencies import get_tenant_db_session
-from shared_auth import get_current_user, verify_token
-
-# Import all modular routers
-from users import users_router, User, UserSession
-from settings import settings_router, AuditLog
-from tools import tools_router
-from common.enums import UserStatus
-
-# Import shared base for creating all tables
+# Local imports
+from database import engine, get_db, SessionLocal
+from shared_auth import (
+    get_current_user,
+    require_permission,
+    require_role,
+    get_current_tenant,
+    verify_tenant_access
+)
 from shared_models import Base
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
+# Module imports
+from users.endpoints import router as users_router
+from settings.endpoints import router as settings_router
+from tools.endpoints import router as tools_router
+
+# Setup logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
 
-# Redis client for caching - optional
-redis_client = None
-try:
-    import redis
-    redis_client = redis.Redis(
-        host=os.getenv('REDIS_HOST', 'localhost'),
-        port=int(os.getenv('REDIS_PORT', '6379')),
-        decode_responses=True
-    )
-    redis_client.ping()
-    logger.info("Connected to Redis")
-except Exception as e:
-    logger.warning(f"Could not connect to Redis: {e}")
-    redis_client = None
+# Configuration
+SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-change-in-production")
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 30
+REFRESH_TOKEN_EXPIRE_DAYS = 7
 
-# Authentication schemas
+# Pydantic models for authentication
 class LoginRequest(BaseModel):
-    username: str = Field(..., min_length=1)
-    password: str = Field(..., min_length=1)
-    remember_me: bool = Field(default=False)
+    """Login request model"""
+    email: str
+    password: str
+    tenant_id: Optional[str] = None
 
 class TokenResponse(BaseModel):
+    """Token response model"""
     access_token: str
-    refresh_token: str
+    refresh_token: Optional[str] = None
     token_type: str = "bearer"
     expires_in: int
-    user: Dict[str, Any]
+    user_id: str
+    tenant_id: Optional[str] = None
 
 class PasswordReset(BaseModel):
-    email: EmailStr
+    """Password reset request model"""
+    email: str
 
 class PasswordChange(BaseModel):
+    """Password change request model"""
     current_password: str
-    new_password: str = Field(..., min_length=8)
-    confirm_password: str = Field(..., min_length=8)
+    new_password: str
+    confirm_password: str
 
     @validator('confirm_password')
     def passwords_match(cls, v, values):
@@ -75,291 +80,380 @@ class PasswordChange(BaseModel):
             raise ValueError('Passwords do not match')
         return v
 
-# Password hashing
-try:
-    from passlib.context import CryptContext
-    pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-except ImportError:
-    logger.warning("passlib not available, using simple password hashing")
-    import hashlib
-    pwd_context = None
 
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Verify a password against its hash"""
-    if pwd_context:
-        return pwd_context.verify(plain_password, hashed_password)
-    else:
-        # Simple fallback hash verification
-        return hashlib.sha256(plain_password.encode()).hexdigest() == hashed_password
+# ============================================================================
+# Lifespan Manager
+# ============================================================================
 
-def get_password_hash(password: str) -> str:
-    """Hash a password"""
-    if pwd_context:
-        return pwd_context.hash(password)
-    else:
-        # Simple fallback hashing
-        return hashlib.sha256(password.encode()).hexdigest()
-
-def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
-    """Create JWT access token"""
-    try:
-        from jose import jwt
-        to_encode = data.copy()
-        if expires_delta:
-            expire = datetime.utcnow() + expires_delta
-        else:
-            expire = datetime.utcnow() + timedelta(hours=24)
-
-        to_encode.update({"exp": expire})
-        encoded_jwt = jwt.encode(to_encode, os.getenv('SECRET_KEY', 'your-secret-key'), algorithm="HS256")
-        return encoded_jwt
-    except ImportError:
-        # Simple token fallback
-        import base64
-        import json
-        token_data = {**data, "exp": (datetime.utcnow() + (expires_delta or timedelta(hours=24))).timestamp()}
-        return base64.b64encode(json.dumps(token_data).encode()).decode()
-
-# Application lifespan
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Handle application startup and shutdown"""
+    """
+    Manage application lifecycle - startup and shutdown
+    """
     # Startup
-    logger.info("Starting System Service...")
+    logger.info("🚀 Starting System Service...")
 
-    # Create all tables from all modules
     try:
-        # Import all models to ensure they're registered with shared Base
-        from users.models import User, Role, Permission, Team, UserSession
-        from settings.models import Setting, AuditLog
-        from tools.models import Note, Task, LogCall, Attachment, Event
+        # Create database tables
+        logger.info("📊 Initializing database...")
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
 
-        # Create all tables using shared Base
-        Base.metadata.create_all(bind=engine)
-        logger.info("Database tables created successfully")
+        # Verify database connection
+        async with SessionLocal() as session:
+            result = await session.execute(text("SELECT 1"))
+            logger.info("✅ Database connection verified")
+
+        # Log module registration
+        logger.info("📦 Modules registered:")
+        logger.info("  - Users module: /api/v1/users")
+        logger.info("  - Settings module: /api/v1/settings")
+        logger.info("  - Tools module: /api/v1/tools")
+
+        logger.info("✅ System Service started successfully")
+
     except Exception as e:
-        logger.error(f"Failed to create database tables: {e}")
+        logger.error(f"❌ Failed to start System Service: {str(e)}")
         raise
 
     yield
 
     # Shutdown
-    logger.info("Shutting down System Service...")
-    if redis_client:
-        redis_client.close()
+    logger.info("👋 Shutting down System Service...")
+    await engine.dispose()
+    logger.info("✅ System Service shut down complete")
 
-# Create FastAPI app
+
+# ============================================================================
+# Application Setup
+# ============================================================================
+
 app = FastAPI(
     title="System Service",
-    description="Manages tenant-specific users, roles, permissions, and settings",
+    description="User management, settings, and administrative tools for the Travel System",
     version="2.0.0",
-    lifespan=lifespan
+    lifespan=lifespan,
+    docs_url="/docs",
+    redoc_url="/redoc"
 )
 
-# Add CORS middleware
+# CORS Configuration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Configure appropriately for production
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Include modular routers
-app.include_router(users_router, prefix="/api/v1", tags=["users"])
-app.include_router(settings_router, prefix="/api/v1", tags=["settings"])
-app.include_router(tools_router, prefix="/api/v1", tags=["tools"])
 
-# Root endpoint
-@app.get("/")
+# ============================================================================
+# Health Check Endpoints
+# ============================================================================
+
+@app.get("/", tags=["Health"])
 async def root():
-    """Root endpoint"""
+    """Root endpoint with service information"""
     return {
-        "service": "system-service",
+        "service": "System Service",
         "version": "2.0.0",
-        "status": "running",
-        "timestamp": datetime.utcnow().isoformat(),
+        "status": "operational",
+        "description": "User management, settings, and administrative tools",
         "modules": {
-            "users": "User management, roles, permissions, teams",
+            "users": "User and role management",
             "settings": "System settings and audit logs",
-            "tools": "Notes, tasks, calls, attachments, events"
-        }
+            "tools": "Administrative tools (notes, tasks, calls)"
+        },
+        "endpoints": {
+            "health": "/health",
+            "docs": "/docs",
+            "users": "/api/v1/users",
+            "settings": "/api/v1/settings",
+            "tools": "/api/v1/tools"
+        },
+        "timestamp": datetime.utcnow().isoformat()
     }
 
-# Health check endpoints
-@app.get("/health")
-async def health_check(db: Session = Depends(get_db)):
-    """Health check endpoint"""
-    try:
-        # Test database connection
-        db.execute(text("SELECT 1"))
-        db_status = "healthy"
-    except Exception as e:
-        logger.error(f"Database health check failed: {e}")
-        db_status = "unhealthy"
 
-    # Test Redis connection
-    redis_status = "healthy" if redis_client else "unavailable"
-    if redis_client:
-        try:
-            redis_client.ping()
-        except Exception as e:
-            logger.error(f"Redis health check failed: {e}")
-            redis_status = "unhealthy"
-
-    overall_status = "healthy" if db_status == "healthy" else "degraded"
-
-    return {
-        "status": overall_status,
+@app.get("/health", tags=["Health"])
+async def health_check(db: AsyncSession = Depends(get_db)):
+    """
+    Comprehensive health check endpoint
+    """
+    health_status = {
+        "status": "healthy",
         "timestamp": datetime.utcnow().isoformat(),
-        "checks": {
-            "database": db_status,
-            "redis": redis_status
-        }
+        "service": "System Service",
+        "version": "2.0.0",
+        "checks": {}
     }
 
-@app.get("/readiness")
-async def readiness_check(db: Session = Depends(get_db)):
-    """Readiness check endpoint"""
+    # Database check
     try:
-        # Verify database is ready
-        db.execute(text("SELECT 1"))
-
-        # Verify critical tables exist
-        db.execute(text("SELECT count(*) FROM information_schema.tables WHERE table_name = 'users'"))
-
-        return {
-            "status": "ready",
-            "timestamp": datetime.utcnow().isoformat()
+        result = await db.execute(text("SELECT 1"))
+        await db.commit()
+        health_status["checks"]["database"] = {
+            "status": "healthy",
+            "message": "Database connection successful"
         }
     except Exception as e:
-        logger.error(f"Readiness check failed: {e}")
-        raise HTTPException(
+        health_status["status"] = "unhealthy"
+        health_status["checks"]["database"] = {
+            "status": "unhealthy",
+            "message": f"Database error: {str(e)}"
+        }
+
+    # Module checks
+    health_status["checks"]["modules"] = {
+        "users": "loaded",
+        "settings": "loaded",
+        "tools": "loaded"
+    }
+
+    return health_status
+
+
+@app.get("/readiness", tags=["Health"])
+async def readiness_check(db: AsyncSession = Depends(get_db)):
+    """
+    Readiness check for Kubernetes
+    """
+    try:
+        # Check database
+        result = await db.execute(text("SELECT 1"))
+        await db.commit()
+
+        # Check critical tables exist
+        inspector = inspect(engine.sync_engine)
+        tables = inspector.get_table_names()
+        required_tables = ['users', 'roles', 'settings', 'audit_logs', 'tasks', 'notes']
+
+        missing_tables = [t for t in required_tables if t not in tables]
+        if missing_tables:
+            return JSONResponse(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                content={"status": "not ready", "missing_tables": missing_tables}
+            )
+
+        return {"status": "ready", "timestamp": datetime.utcnow().isoformat()}
+
+    except Exception as e:
+        return JSONResponse(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Service not ready"
+            content={"status": "not ready", "error": str(e)}
         )
 
-# Tenant management endpoints
-@app.post("/api/v1/tenant/initialize")
+
+# ============================================================================
+# Authentication Endpoints
+# ============================================================================
+
+@app.post("/api/v1/auth/initialize-tenant", tags=["Authentication"])
 async def initialize_tenant_schema(
     tenant_id: str,
-    schema_name: str = None,
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db)
 ):
-    """Initialize tenant-specific schema"""
+    """
+    Initialize database schema for a new tenant
+    Creates all necessary tables and initial data
+    """
     try:
-        # Use provided schema_name or generate from tenant_id
-        if not schema_name:
-            # Fallback: replace hyphens with underscores for valid schema name
-            schema_name = f"tenant_{tenant_id.replace('-', '_')}"
+        logger.info(f"Initializing schema for tenant: {tenant_id}")
 
-        # Create schema if it doesn't exist
-        db.execute(text(f"CREATE SCHEMA IF NOT EXISTS {schema_name}"))
-        db.commit()
+        # Create schema if not exists
+        await db.execute(text(f"CREATE SCHEMA IF NOT EXISTS tenant_{tenant_id}"))
 
-        # Create all tables in tenant schema using the current connection
-        # We need to use the connection from the current session
-        connection = db.connection()
+        # Set search path to tenant schema
+        await db.execute(text(f"SET search_path TO tenant_{tenant_id}, public"))
 
-        # Set the schema for this connection
-        connection.execute(text(f"SET search_path TO {schema_name}"))
+        # Create tables in tenant schema
+        async with engine.begin() as conn:
+            # Set the schema search path for the connection
+            await conn.execute(text(f"SET search_path TO tenant_{tenant_id}, public"))
+            # Create all tables
+            await conn.run_sync(Base.metadata.create_all)
 
-        # Create all tables using the connection with the correct search_path
-        Base.metadata.create_all(bind=connection)
+        # Create default admin user
+        from users.models import User, Role, Permission
+        from common.enums import UserStatus, PermissionAction, ResourceType
 
-        # Commit the transaction
-        db.commit()
+        # Check if admin role exists
+        result = await db.execute(
+            text("SELECT id FROM roles WHERE name = 'admin' LIMIT 1")
+        )
+        admin_role = result.first()
 
-        logger.info(f"Initialized schema for tenant: {tenant_id}")
+        if not admin_role:
+            # Create admin role
+            admin_role_id = str(uuid4())
+            await db.execute(
+                text("""
+                    INSERT INTO roles (id, name, display_name, description, is_system, priority)
+                    VALUES (:id, :name, :display_name, :description, :is_system, :priority)
+                """),
+                {
+                    "id": admin_role_id,
+                    "name": "admin",
+                    "display_name": "Administrator",
+                    "description": "Full system access",
+                    "is_system": True,
+                    "priority": 100
+                }
+            )
+
+            # Create admin user
+            admin_user_id = str(uuid4())
+            password_hash = bcrypt.hashpw("admin123".encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+
+            await db.execute(
+                text("""
+                    INSERT INTO users (id, email, username, password_hash, first_name, last_name, status, is_active, is_verified)
+                    VALUES (:id, :email, :username, :password_hash, :first_name, :last_name, :status, :is_active, :is_verified)
+                """),
+                {
+                    "id": admin_user_id,
+                    "email": f"admin@tenant{tenant_id}.com",
+                    "username": f"admin_{tenant_id}",
+                    "password_hash": password_hash,
+                    "first_name": "Admin",
+                    "last_name": "User",
+                    "status": "active",
+                    "is_active": True,
+                    "is_verified": True
+                }
+            )
+
+            # Assign admin role to user
+            await db.execute(
+                text("""
+                    INSERT INTO user_roles (user_id, role_id)
+                    VALUES (:user_id, :role_id)
+                """),
+                {
+                    "user_id": admin_user_id,
+                    "role_id": admin_role_id
+                }
+            )
+
+        await db.commit()
 
         return {
-            "status": "success",
-            "message": f"Tenant schema {schema_name} initialized successfully",
+            "success": True,
+            "message": f"Schema initialized for tenant {tenant_id}",
             "tenant_id": tenant_id,
-            "schema_name": schema_name
+            "admin_user": f"admin_{tenant_id}",
+            "default_password": "admin123 (please change immediately)"
         }
 
     except Exception as e:
-        logger.error(f"Failed to initialize tenant schema: {e}")
-        db.rollback()
+        await db.rollback()
+        logger.error(f"Failed to initialize tenant schema: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to initialize tenant schema: {str(e)}"
         )
 
-@app.get("/api/v1/tenant/verify")
-def get_current_tenant() -> str:
-    """Get current tenant ID - placeholder implementation"""
-    return "default_tenant"
 
-@app.get("/api/v1/tenant/verify")
+def get_current_tenant(request: Request) -> Optional[str]:
+    """Extract tenant ID from request headers"""
+    return request.headers.get("X-Tenant-ID")
+
+
+@app.post("/api/v1/auth/verify-tenant", tags=["Authentication"])
 async def verify_tenant_schema_endpoint(
     tenant_id: str,
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db)
 ):
-    """Verify tenant schema exists and is properly configured"""
+    """
+    Verify that a tenant's schema exists and is properly configured
+    """
     try:
-        schema_name = f"tenant_{tenant_id}"
-
         # Check if schema exists
-        result = db.execute(text("""
-            SELECT schema_name
-            FROM information_schema.schemata
-            WHERE schema_name = :schema_name
-        """), {"schema_name": schema_name})
+        result = await db.execute(
+            text("""
+                SELECT schema_name
+                FROM information_schema.schemata
+                WHERE schema_name = :schema_name
+            """),
+            {"schema_name": f"tenant_{tenant_id}"}
+        )
 
-        if not result.fetchone():
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Tenant schema {schema_name} not found"
-            )
+        schema = result.first()
+        if not schema:
+            return {
+                "exists": False,
+                "message": f"Schema for tenant {tenant_id} does not exist"
+            }
 
-        # Set search path and verify tables
-        db.execute(text(f"SET search_path TO {schema_name}"))
+        # Set search path and check tables
+        await db.execute(text(f"SET search_path TO tenant_{tenant_id}, public"))
 
-        # Check critical tables
-        required_tables = ['users', 'roles', 'permissions', 'settings', 'audit_logs']
-        for table in required_tables:
-            result = db.execute(text(f"""
-                SELECT tablename
-                FROM pg_tables
-                WHERE tablename = '{table}'
-                AND schemaname = '{schema_name}'
-            """))
-            if not result.fetchone():
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail=f"Required table {table} not found in schema {schema_name}"
-                )
+        result = await db.execute(
+            text("""
+                SELECT table_name
+                FROM information_schema.tables
+                WHERE table_schema = :schema_name
+                ORDER BY table_name
+            """),
+            {"schema_name": f"tenant_{tenant_id}"}
+        )
+
+        tables = [row[0] for row in result]
+
+        required_tables = ['users', 'roles', 'permissions', 'settings', 'audit_logs', 'tasks', 'notes', 'log_calls']
+        missing_tables = [t for t in required_tables if t not in tables]
 
         return {
-            "status": "verified",
-            "tenant_id": tenant_id,
-            "schema_name": schema_name,
-            "tables_verified": required_tables
+            "exists": True,
+            "schema": f"tenant_{tenant_id}",
+            "tables": tables,
+            "missing_tables": missing_tables,
+            "is_complete": len(missing_tables) == 0,
+            "message": "Schema is properly configured" if len(missing_tables) == 0 else f"Missing tables: {missing_tables}"
         }
 
-    except HTTPException:
-        raise
     except Exception as e:
-        logger.error(f"Failed to verify tenant schema: {e}")
+        logger.error(f"Failed to verify tenant schema: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to verify tenant schema: {str(e)}"
         )
 
-# Authentication endpoints
-@app.post("/api/v1/auth/login", response_model=TokenResponse)
+
+@app.post("/api/v1/auth/login", response_model=TokenResponse, tags=["Authentication"])
 async def tenant_login(
-    login_data: LoginRequest,
-    db: Session = Depends(get_db)
+    request: LoginRequest,
+    tenant_request: Request,
+    db: AsyncSession = Depends(get_db)
 ):
-    """Tenant-specific user login"""
+    """
+    Authenticate user within a specific tenant context
+    """
     try:
-        # Find user by username or email
-        user = db.query(User).filter(
-            (User.username == login_data.username) | (User.email == login_data.username)
-        ).first()
+        # Get tenant from header or request
+        tenant_id = tenant_request.headers.get("X-Tenant-ID") or request.tenant_id
+
+        if not tenant_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Tenant ID is required"
+            )
+
+        # Set search path to tenant schema
+        await db.execute(text(f"SET search_path TO tenant_{tenant_id}, public"))
+
+        # Find user by email
+        result = await db.execute(
+            text("""
+                SELECT id, email, username, password_hash, status, is_active, is_verified
+                FROM users
+                WHERE email = :email
+                LIMIT 1
+            """),
+            {"email": request.email}
+        )
+
+        user = result.first()
 
         if not user:
             raise HTTPException(
@@ -368,145 +462,224 @@ async def tenant_login(
             )
 
         # Verify password
-        if not verify_password(login_data.password, user.password_hash):
-            # Increment failed login attempts
-            user.failed_login_attempts += 1
-            if user.failed_login_attempts >= 5:
-                user.locked_until = datetime.utcnow() + timedelta(minutes=30)
-            db.commit()
+        if not bcrypt.checkpw(request.password.encode('utf-8'), user.password_hash.encode('utf-8')):
+            # Update failed login attempts
+            await db.execute(
+                text("""
+                    UPDATE users
+                    SET failed_login_attempts = failed_login_attempts + 1
+                    WHERE id = :user_id
+                """),
+                {"user_id": user.id}
+            )
+            await db.commit()
 
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid credentials"
             )
 
-        # Check if user is locked
-        if user.locked_until and user.locked_until > datetime.utcnow():
-            raise HTTPException(
-                status_code=status.HTTP_423_LOCKED,
-                detail="Account is temporarily locked"
-            )
-
         # Check if user is active
-        if not user.is_active or user.status != UserStatus.ACTIVE:
+        if not user.is_active or user.status != 'active':
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Account is not active"
             )
 
-        # Reset failed login attempts on successful login
-        user.failed_login_attempts = 0
-        user.locked_until = None
-        user.last_login_at = datetime.utcnow()
-        user.last_activity_at = datetime.utcnow()
-
         # Create tokens
-        access_token_expires = timedelta(hours=24)
-        refresh_token_expires = timedelta(days=7)
+        access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        refresh_token_expires = timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
 
         access_token = create_access_token(
-            data={"sub": str(user.id), "tenant_id": "current"},
+            data={
+                "sub": str(user.id),
+                "email": user.email,
+                "username": user.username,
+                "tenant_id": tenant_id
+            },
             expires_delta=access_token_expires
         )
 
         refresh_token = create_access_token(
-            data={"sub": str(user.id), "tenant_id": "current", "type": "refresh"},
+            data={
+                "sub": str(user.id),
+                "tenant_id": tenant_id,
+                "type": "refresh"
+            },
             expires_delta=refresh_token_expires
         )
 
-        # Create user session
-        session = UserSession(
-            user_id=user.id,
-            token_hash=get_password_hash(access_token),
-            refresh_token_hash=get_password_hash(refresh_token),
-            expires_at=datetime.utcnow() + access_token_expires,
-            refresh_expires_at=datetime.utcnow() + refresh_token_expires
+        # Update last login
+        await db.execute(
+            text("""
+                UPDATE users
+                SET last_login_at = :now,
+                    failed_login_attempts = 0
+                WHERE id = :user_id
+            """),
+            {"now": datetime.utcnow(), "user_id": user.id}
         )
-        db.add(session)
-
-        # Create audit log
-        audit_log = AuditLog(
-            user_id=user.id,
-            action="user_login",
-            resource_type="authentication",
-            result="success"
-        )
-        db.add(audit_log)
-
-        db.commit()
+        await db.commit()
 
         return TokenResponse(
             access_token=access_token,
             refresh_token=refresh_token,
-            expires_in=int(access_token_expires.total_seconds()),
-            user=user.to_dict()
+            expires_in=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+            user_id=str(user.id),
+            tenant_id=tenant_id
         )
 
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Login failed: {e}")
+        logger.error(f"Login failed: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Login failed"
+            detail="Authentication failed"
         )
 
-@app.post("/api/v1/auth/logout")
+
+@app.post("/api/v1/auth/logout", tags=["Authentication"])
 async def logout(
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    current_user: Dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
 ):
-    """Logout user and invalidate session"""
+    """
+    Logout user and invalidate session
+    """
     try:
-        # Deactivate all user sessions
-        db.query(UserSession).filter(UserSession.user_id == current_user.id).update(
-            {"is_active": False}
-        )
+        # In a production environment, you would:
+        # 1. Add the token to a blacklist
+        # 2. Delete the session from user_sessions table
+        # 3. Clear any cached data
 
-        # Create audit log
-        audit_log = AuditLog(
-            user_id=current_user.id,
-            action="user_logout",
-            resource_type="authentication",
-            result="success"
-        )
-        db.add(audit_log)
+        user_id = current_user.get("sub")
+        tenant_id = current_user.get("tenant_id")
 
-        db.commit()
+        if tenant_id:
+            await db.execute(text(f"SET search_path TO tenant_{tenant_id}, public"))
 
-        return {"message": "Logged out successfully"}
+            # Update last activity
+            await db.execute(
+                text("""
+                    UPDATE users
+                    SET last_activity_at = :now
+                    WHERE id = :user_id
+                """),
+                {"now": datetime.utcnow(), "user_id": user_id}
+            )
+            await db.commit()
+
+        return {
+            "success": True,
+            "message": "Logged out successfully"
+        }
 
     except Exception as e:
-        logger.error(f"Logout failed: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Logout failed"
-        )
+        logger.error(f"Logout failed: {str(e)}")
+        return {
+            "success": False,
+            "message": "Logout failed"
+        }
 
-@app.get("/api/v1/auth/me")
+
+@app.get("/api/v1/auth/me", tags=["Authentication"])
 async def get_current_user_info(
-    current_user: User = Depends(get_current_user)
+    current_user: Dict = Depends(get_current_user)
 ):
-    """Get current user information"""
-    return current_user.to_dict()
+    """Get current user information from token"""
+    return current_user
 
-@app.post("/api/v1/auth/test")
+
+@app.get("/api/v1/auth/test", tags=["Authentication"])
 async def auth_test(
-    current_user: User = Depends(get_current_user)
+    current_user: Dict = Depends(get_current_user)
 ):
-    """Test authentication"""
+    """Test authentication endpoint"""
     return {
         "message": "Authentication successful",
-        "user_id": str(current_user.id),
-        "username": current_user.username,
-        "tenant_id": get_current_tenant(),
+        "user": current_user,
         "timestamp": datetime.utcnow().isoformat()
     }
 
-# Error handlers
+
+# ============================================================================
+# Utility Functions
+# ============================================================================
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    """
+    Verify a plain password against a hashed password
+    """
+    return bcrypt.checkpw(
+        plain_password.encode('utf-8'),
+        hashed_password.encode('utf-8')
+    )
+
+
+def get_password_hash(password: str) -> str:
+    """
+    Hash a password using bcrypt
+    """
+    return bcrypt.hashpw(
+        password.encode('utf-8'),
+        bcrypt.gensalt()
+    ).decode('utf-8')
+
+
+def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
+    """
+    Create a JWT access token
+    """
+    to_encode = data.copy()
+    if expires_delta:
+        expire = datetime.utcnow() + expires_delta
+    else:
+        expire = datetime.utcnow() + timedelta(minutes=15)
+
+    to_encode.update({
+        "exp": expire,
+        "iat": datetime.utcnow(),
+        "jti": str(uuid4())  # JWT ID for tracking
+    })
+
+    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return encoded_jwt
+
+
+# ============================================================================
+# Register Module Routers
+# ============================================================================
+
+# Users module
+app.include_router(
+    users_router,
+    prefix="/api/v1/users",
+    tags=["Users"]
+)
+
+# Settings module
+app.include_router(
+    settings_router,
+    prefix="/api/v1/settings",
+    tags=["Settings"]
+)
+
+# Tools module
+app.include_router(
+    tools_router,
+    prefix="/api/v1/tools",
+    tags=["Tools"]
+)
+
+
+# ============================================================================
+# Exception Handlers
+# ============================================================================
+
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):
-    """Custom HTTP exception handler"""
+    """Handle HTTP exceptions"""
     return JSONResponse(
         status_code=exc.status_code,
         content={
@@ -516,28 +689,30 @@ async def http_exception_handler(request: Request, exc: HTTPException):
         }
     )
 
+
 @app.exception_handler(Exception)
 async def general_exception_handler(request: Request, exc: Exception):
-    """General exception handler"""
-    logger.error(f"Unhandled exception: {exc}")
+    """Handle general exceptions"""
+    logger.error(f"Unhandled exception: {str(exc)}", exc_info=True)
     return JSONResponse(
-        status_code=500,
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         content={
             "error": "Internal server error",
-            "status_code": 500,
+            "message": str(exc) if os.getenv("DEBUG") else "An unexpected error occurred",
             "timestamp": datetime.utcnow().isoformat()
         }
     )
 
+
+# ============================================================================
+# Main Entry Point
+# ============================================================================
+
 if __name__ == "__main__":
-    try:
-        import uvicorn
-        uvicorn.run(
-            "main:app",
-            host=os.getenv("HOST", "0.0.0.0"),
-            port=int(os.getenv("PORT", "8008")),
-            reload=os.getenv("ENVIRONMENT", "production") == "development"
-        )
-    except ImportError:
-        logger.error("uvicorn not available, cannot start server")
-        raise
+    import uvicorn
+    uvicorn.run(
+        "main:app",
+        host="0.0.0.0",
+        port=8008,
+        reload=True
+    )

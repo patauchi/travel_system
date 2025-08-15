@@ -1,230 +1,211 @@
 """
 Database configuration and connection management for system-service
 Handles connections to both shared schema and tenant-specific schemas
+Using async SQLAlchemy for better performance
 """
 
-from sqlalchemy import create_engine, text
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, Session
-from sqlalchemy.pool import NullPool
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+from sqlalchemy.orm import declarative_base
+from sqlalchemy import text
 import os
 import logging
-from typing import Optional, Dict
-from contextlib import contextmanager
+from typing import Optional, Dict, AsyncGenerator
+from contextlib import asynccontextmanager
 
 # Configure logging
 logger = logging.getLogger(__name__)
 
-# Database URL from environment
+# Database configuration
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
     "postgresql://postgres:postgres123@localhost:5432/multitenant_db"
 )
 
-# Create base class for models
-Base = declarative_base()
+# Convert to async URL if needed
+if DATABASE_URL.startswith("postgresql://"):
+    ASYNC_DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://")
+else:
+    ASYNC_DATABASE_URL = DATABASE_URL
 
-# Create engine for shared schema (default connection)
-engine = create_engine(
-    DATABASE_URL,
+# Create async engine for shared schema
+engine = create_async_engine(
+    ASYNC_DATABASE_URL,
+    echo=os.getenv("SQL_ECHO", "false").lower() == "true",
+    pool_size=20,
+    max_overflow=40,
     pool_pre_ping=True,
-    pool_size=10,
-    max_overflow=20,
-    echo=os.getenv("SQL_ECHO", "false").lower() == "true"
+    pool_recycle=3600
 )
 
-# Session factory for shared schema
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+# Create async session factory
+SessionLocal = async_sessionmaker(
+    engine,
+    class_=AsyncSession,
+    expire_on_commit=False,
+    autocommit=False,
+    autoflush=False
+)
 
-# Cache for tenant engines to avoid recreating connections
-_tenant_engines: Dict[str, any] = {}
-_tenant_sessions: Dict[str, any] = {}
+# Cache for tenant sessions
+_tenant_sessions: Dict[str, async_sessionmaker] = {}
 
 
-def get_db():
+async def get_db() -> AsyncGenerator[AsyncSession, None]:
     """
     Dependency to get shared database session
     Used for accessing shared schema tables
     """
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+    async with SessionLocal() as session:
+        try:
+            yield session
+        finally:
+            await session.close()
 
 
-def get_tenant_engine(schema_name: str):
+def get_schema_name(tenant_id: str) -> str:
     """
-    Get or create an engine for a specific tenant schema
+    Convert tenant ID to schema name
 
     Args:
-        schema_name: The name of the tenant's schema
-
-    Returns:
-        SQLAlchemy engine configured for the tenant schema
-    """
-    if schema_name not in _tenant_engines:
-        # Create engine with schema-specific configuration
-        tenant_engine = create_engine(
-            DATABASE_URL,
-            pool_pre_ping=True,
-            pool_size=5,  # Smaller pool per tenant
-            max_overflow=10,
-            echo=os.getenv("SQL_ECHO", "false").lower() == "true",
-            connect_args={
-                "options": f"-csearch_path={schema_name},public"
-            }
-        )
-        _tenant_engines[schema_name] = tenant_engine
-
-        # Create session factory for this tenant
-        _tenant_sessions[schema_name] = sessionmaker(
-            autocommit=False,
-            autoflush=False,
-            bind=tenant_engine
-        )
-
-    return _tenant_engines[schema_name]
-
-
-def get_tenant_session_factory(schema_name: str):
-    """
-    Get session factory for a specific tenant schema
-
-    Args:
-        schema_name: The name of the tenant's schema
-
-    Returns:
-        SessionMaker configured for the tenant schema
-    """
-    if schema_name not in _tenant_sessions:
-        get_tenant_engine(schema_name)  # This will create both engine and session factory
-
-    return _tenant_sessions[schema_name]
-
-
-def get_tenant_db(tenant_slug: str) -> Session:
-    """
-    Get database session for a specific tenant
-
-    Args:
-        tenant_slug: The slug of the tenant
-
-    Returns:
-        Database session for the tenant's schema
-    """
-    # Convert tenant slug to schema name
-    schema_name = f"tenant_{tenant_slug.replace('-', '_')}"
-
-    # Get session factory for this tenant
-    TenantSession = get_tenant_session_factory(schema_name)
-
-    # Return new session
-    return TenantSession()
-
-
-def get_tenant_db_dependency(tenant_slug: str):
-    """
-    FastAPI dependency to get tenant database session
-    Properly handles session lifecycle with cleanup
-
-    Args:
-        tenant_slug: The slug of the tenant from path parameter
-
-    Yields:
-        Database session for the tenant's schema
-    """
-    # Convert tenant slug to schema name
-    schema_name = f"tenant_{tenant_slug.replace('-', '_')}"
-
-    # Get session factory for this tenant
-    TenantSession = get_tenant_session_factory(schema_name)
-
-    # Create new session
-    db = TenantSession()
-    try:
-        # Set the search path explicitly for this session
-        db.execute(text(f"SET search_path TO {schema_name}, public"))
-        yield db
-    finally:
-        db.close()
-
-
-@contextmanager
-def tenant_db_context(tenant_slug: str):
-    """
-    Context manager for tenant database sessions
-
-    Args:
-        tenant_slug: The slug of the tenant
-
-    Yields:
-        Database session for the tenant's schema
-    """
-    db = get_tenant_db(tenant_slug)
-    try:
-        yield db
-        db.commit()
-    except Exception:
-        db.rollback()
-        raise
-    finally:
-        db.close()
-
-
-def get_schema_name_from_slug(tenant_slug: str) -> str:
-    """
-    Convert tenant slug to schema name
-
-    Args:
-        tenant_slug: The slug of the tenant
+        tenant_id: The tenant identifier
 
     Returns:
         Schema name for the tenant
     """
-    return f"tenant_{tenant_slug.replace('-', '_')}"
+    # Replace any characters that aren't valid in PostgreSQL schema names
+    safe_tenant_id = tenant_id.replace('-', '_').replace(' ', '_').lower()
+    return f"tenant_{safe_tenant_id}"
 
 
-def verify_tenant_schema_exists(schema_name: str) -> bool:
+async def get_tenant_session(tenant_id: str) -> AsyncSession:
+    """
+    Get an async session for a specific tenant
+
+    Args:
+        tenant_id: The tenant identifier
+
+    Returns:
+        AsyncSession configured for the tenant's schema
+    """
+    schema_name = get_schema_name(tenant_id)
+
+    if schema_name not in _tenant_sessions:
+        # Create a new engine for this tenant with schema in search path
+        tenant_engine = create_async_engine(
+            ASYNC_DATABASE_URL,
+            echo=os.getenv("SQL_ECHO", "false").lower() == "true",
+            pool_size=5,  # Smaller pool per tenant
+            max_overflow=10,
+            pool_pre_ping=True,
+            connect_args={
+                "server_settings": {
+                    "search_path": f"{schema_name},public"
+                }
+            }
+        )
+
+        # Create session factory for this tenant
+        _tenant_sessions[schema_name] = async_sessionmaker(
+            tenant_engine,
+            class_=AsyncSession,
+            expire_on_commit=False,
+            autocommit=False,
+            autoflush=False
+        )
+
+    # Create and return a new session
+    session = _tenant_sessions[schema_name]()
+
+    # Set search path explicitly
+    await session.execute(text(f"SET search_path TO {schema_name}, public"))
+
+    return session
+
+
+async def get_tenant_db(tenant_id: str) -> AsyncGenerator[AsyncSession, None]:
+    """
+    Dependency to get tenant-specific database session
+
+    Args:
+        tenant_id: The tenant identifier
+
+    Yields:
+        AsyncSession for the tenant's schema
+    """
+    session = await get_tenant_session(tenant_id)
+    try:
+        yield session
+    finally:
+        await session.close()
+
+
+@asynccontextmanager
+async def tenant_session_context(tenant_id: str):
+    """
+    Context manager for tenant database sessions
+
+    Args:
+        tenant_id: The tenant identifier
+
+    Yields:
+        AsyncSession for the tenant's schema
+    """
+    session = await get_tenant_session(tenant_id)
+    try:
+        yield session
+        await session.commit()
+    except Exception:
+        await session.rollback()
+        raise
+    finally:
+        await session.close()
+
+
+async def verify_tenant_schema_exists(tenant_id: str) -> bool:
     """
     Check if a tenant schema exists in the database
 
     Args:
-        schema_name: The name of the schema to check
+        tenant_id: The tenant identifier
 
     Returns:
         True if schema exists, False otherwise
     """
+    schema_name = get_schema_name(tenant_id)
+
     try:
-        with engine.connect() as conn:
-            result = conn.execute(
-                text(
-                    "SELECT schema_name FROM information_schema.schemata "
-                    "WHERE schema_name = :schema_name"
-                ),
+        async with SessionLocal() as session:
+            result = await session.execute(
+                text("""
+                    SELECT schema_name
+                    FROM information_schema.schemata
+                    WHERE schema_name = :schema_name
+                """),
                 {"schema_name": schema_name}
             )
-            return result.fetchone() is not None
+            return result.first() is not None
     except Exception as e:
         logger.error(f"Error checking schema existence: {str(e)}")
         return False
 
 
-def create_tenant_schema(schema_name: str) -> bool:
+async def create_tenant_schema(tenant_id: str) -> bool:
     """
     Create a new schema for a tenant
 
     Args:
-        schema_name: The name of the schema to create
+        tenant_id: The tenant identifier
 
     Returns:
         True if successful, False otherwise
     """
+    schema_name = get_schema_name(tenant_id)
+
     try:
-        with engine.connect() as conn:
+        async with SessionLocal() as session:
             # Create schema
-            conn.execute(text(f"CREATE SCHEMA IF NOT EXISTS {schema_name}"))
-            conn.commit()
+            await session.execute(text(f"CREATE SCHEMA IF NOT EXISTS {schema_name}"))
+            await session.commit()
 
             logger.info(f"Created schema: {schema_name}")
             return True
@@ -233,27 +214,25 @@ def create_tenant_schema(schema_name: str) -> bool:
         return False
 
 
-def drop_tenant_schema(schema_name: str) -> bool:
+async def drop_tenant_schema(tenant_id: str) -> bool:
     """
     Drop a tenant's schema (use with caution!)
 
     Args:
-        schema_name: The name of the schema to drop
+        tenant_id: The tenant identifier
 
     Returns:
         True if successful, False otherwise
     """
+    schema_name = get_schema_name(tenant_id)
+
     try:
-        with engine.connect() as conn:
+        async with SessionLocal() as session:
             # Drop schema cascade
-            conn.execute(text(f"DROP SCHEMA IF EXISTS {schema_name} CASCADE"))
-            conn.commit()
+            await session.execute(text(f"DROP SCHEMA IF EXISTS {schema_name} CASCADE"))
+            await session.commit()
 
             # Remove from cache
-            if schema_name in _tenant_engines:
-                _tenant_engines[schema_name].dispose()
-                del _tenant_engines[schema_name]
-
             if schema_name in _tenant_sessions:
                 del _tenant_sessions[schema_name]
 
@@ -264,21 +243,22 @@ def drop_tenant_schema(schema_name: str) -> bool:
         return False
 
 
-def get_all_tenant_schemas() -> list:
+async def get_all_tenant_schemas() -> list:
     """
     Get list of all tenant schemas in the database
 
     Returns:
-        List of schema names that start with 'tenant_'
+        List of tenant schema names
     """
     try:
-        with engine.connect() as conn:
-            result = conn.execute(
-                text(
-                    "SELECT schema_name FROM information_schema.schemata "
-                    "WHERE schema_name LIKE 'tenant_%' "
-                    "ORDER BY schema_name"
-                )
+        async with SessionLocal() as session:
+            result = await session.execute(
+                text("""
+                    SELECT schema_name
+                    FROM information_schema.schemata
+                    WHERE schema_name LIKE 'tenant_%'
+                    ORDER BY schema_name
+                """)
             )
             return [row[0] for row in result]
     except Exception as e:
@@ -286,53 +266,114 @@ def get_all_tenant_schemas() -> list:
         return []
 
 
-def execute_in_tenant_schema(schema_name: str, sql: str, params: dict = None) -> any:
+async def execute_in_tenant_schema(tenant_id: str, sql: str, params: dict = None):
     """
     Execute SQL in a specific tenant schema
 
     Args:
-        schema_name: The name of the tenant schema
+        tenant_id: The tenant identifier
         sql: SQL query to execute
         params: Parameters for the SQL query
 
     Returns:
         Query result
     """
+    schema_name = get_schema_name(tenant_id)
+
     try:
-        engine = get_tenant_engine(schema_name)
-        with engine.connect() as conn:
-            result = conn.execute(text(sql), params or {})
-            conn.commit()
+        async with await get_tenant_session(tenant_id) as session:
+            result = await session.execute(text(sql), params or {})
+            await session.commit()
             return result
     except Exception as e:
         logger.error(f"Error executing SQL in schema {schema_name}: {str(e)}")
         raise
 
 
-def init_db():
+async def init_tenant_tables(tenant_id: str):
     """
-    Initialize database (create tables if needed)
-    This is typically handled by migrations, but included for completeness
+    Initialize all tables for a tenant schema
+
+    Args:
+        tenant_id: The tenant identifier
+    """
+    from shared_models import Base
+
+    schema_name = get_schema_name(tenant_id)
+
+    try:
+        # Create schema if it doesn't exist
+        await create_tenant_schema(tenant_id)
+
+        # Create all tables in the tenant schema
+        async with engine.begin() as conn:
+            # Set the schema search path
+            await conn.execute(text(f"SET search_path TO {schema_name}, public"))
+
+            # Create all tables
+            await conn.run_sync(Base.metadata.create_all)
+
+        logger.info(f"Initialized tables for tenant {tenant_id}")
+
+    except Exception as e:
+        logger.error(f"Error initializing tables for tenant {tenant_id}: {str(e)}")
+        raise
+
+
+async def get_db_stats() -> dict:
+    """
+    Get database statistics and health information
+
+    Returns:
+        Dictionary with database statistics
     """
     try:
-        # Import all models to ensure they're registered from modular structure
-        from users.models import (
-            User, Role, Permission, Team,
-            UserSession, PasswordResetToken,
-            EmailVerificationToken, ApiKey
-        )
-        from settings.models import Setting, AuditLog
-        from tools.models import (
-            Note, Task, LogCall, Attachment, Event,
-            CarbonFootprint, ChannelConfig, Review
-        )
+        async with SessionLocal() as session:
+            # Get database size
+            size_result = await session.execute(
+                text("""
+                    SELECT pg_database_size(current_database()) as size,
+                           current_database() as name
+                """)
+            )
+            size_data = size_result.first()
 
-        logger.info("Database models loaded successfully from modular structure")
+            # Get connection count
+            conn_result = await session.execute(
+                text("""
+                    SELECT count(*) as connections
+                    FROM pg_stat_activity
+                    WHERE datname = current_database()
+                """)
+            )
+            conn_data = conn_result.first()
+
+            # Get tenant count
+            tenant_schemas = await get_all_tenant_schemas()
+
+            return {
+                "database_name": size_data.name if size_data else "unknown",
+                "database_size_bytes": size_data.size if size_data else 0,
+                "active_connections": conn_data.connections if conn_data else 0,
+                "tenant_count": len(tenant_schemas),
+                "tenant_schemas": tenant_schemas
+            }
+
     except Exception as e:
-        logger.error(f"Error loading database models: {str(e)}")
-        # Don't raise to allow service to start even if models aren't available
-        logger.warning("Continuing without model imports - they may be loaded later")
+        logger.error(f"Error getting database stats: {str(e)}")
+        return {
+            "error": str(e),
+            "database_name": "unknown",
+            "database_size_bytes": 0,
+            "active_connections": 0,
+            "tenant_count": 0,
+            "tenant_schemas": []
+        }
 
 
-# Initialize database on module load
-init_db()
+# Sync engine for specific operations that require it
+sync_engine = None
+if ASYNC_DATABASE_URL.startswith("postgresql+asyncpg://"):
+    sync_url = ASYNC_DATABASE_URL.replace("postgresql+asyncpg://", "postgresql://")
+    from sqlalchemy import create_engine
+    sync_engine = create_engine(sync_url)
