@@ -29,11 +29,11 @@ RUN useradd -m -u 1000 appuser && \
 USER appuser
 
 # Expose port
-EXPOSE 8011
+EXPOSE 8006
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8011/health || exit 1
+    CMD curl -f http://localhost:8006/health || exit 1
 
 # Run the application
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8011"]
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8006"]
