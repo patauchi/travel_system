@@ -29,7 +29,7 @@ class Account(Base):
 
     # Account specific fields
     account_type = Column(SQLEnum(AccountType), nullable=False, index=True)
-    account_status = Column(SQLEnum(AccountStatus), default=AccountStatus.PROSPECT, index=True)
+    account_status = Column(SQLEnum(AccountStatus), default=AccountStatus.prospect, index=True)
     parent_account_id = Column(Integer, ForeignKey('accounts.id', ondelete='SET NULL'), nullable=True)
     is_following = Column(Boolean, default=False)
 
@@ -59,7 +59,7 @@ class Account(Base):
     # Segmentation information
     customer_segment = Column(String(50), nullable=True)
     loyalty_points = Column(Integer, default=0)
-    risk_level = Column(SQLEnum(RiskLevel), default=RiskLevel.LOW)
+    risk_level = Column(SQLEnum(RiskLevel), default=RiskLevel.low)
 
     # Timestamps
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)

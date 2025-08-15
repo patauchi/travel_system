@@ -24,7 +24,7 @@ class NoteBase(BaseModel):
     content: str = Field(..., min_length=1)
     notable_id: int = Field(..., gt=0)
     notable_type: str = Field(..., min_length=1, max_length=50)
-    priority: NotePriority = Field(default=NotePriority.MEDIUM)
+    priority: NotePriority = Field(default=NotePriority.medium)
     assigned_to: Optional[UUID] = None
 
     @validator('notable_type')
@@ -68,8 +68,8 @@ class NoteResponse(BaseModel):
 class TaskBase(BaseModel):
     title: str = Field(..., min_length=1, max_length=255)
     description: Optional[str] = None
-    status: TaskStatus = Field(default=TaskStatus.PENDING)
-    priority: TaskPriority = Field(default=TaskPriority.LOW)
+    status: TaskStatus = Field(default=TaskStatus.pending)
+    priority: TaskPriority = Field(default=TaskPriority.low)
     due_date: Optional[date] = None
     taskable_id: Optional[int] = Field(None, gt=0)
     taskable_type: Optional[str] = Field(None, max_length=255)
@@ -98,9 +98,9 @@ class TaskUpdate(BaseModel):
     @validator('completed_at', pre=True, always=True)
     def set_completed_at(cls, v, values):
         # Auto-set completed_at when status changes to completed
-        if 'status' in values and values['status'] == TaskStatus.COMPLETED and v is None:
+        if 'status' in values and values['status'] == TaskStatus.completed and v is None:
             return date.today()
-        elif 'status' in values and values['status'] != TaskStatus.COMPLETED:
+        elif 'status' in values and values['status'] != TaskStatus.completed:
             return None
         return v
 
@@ -193,7 +193,7 @@ class AttachmentBase(BaseModel):
     original_name: str = Field(..., min_length=1, max_length=255)
     file_name: str = Field(..., min_length=1, max_length=255)
     file_path: str = Field(..., min_length=1, max_length=500)
-    disk: DiskType = Field(default=DiskType.PUBLIC)
+    disk: DiskType = Field(default=DiskType.public)
     description: Optional[str] = None
     attachable_id: Optional[int] = Field(None, gt=0)
     attachable_type: Optional[str] = Field(None, max_length=255)
@@ -245,7 +245,7 @@ class EventBase(BaseModel):
     end_date: Optional[datetime] = None
     all_day: bool = Field(default=False)
     location: Optional[str] = Field(None, max_length=255)
-    status: EventStatus = Field(default=EventStatus.SCHEDULED)
+    status: EventStatus = Field(default=EventStatus.scheduled)
     notes: Optional[str] = None
     eventable_id: Optional[int] = Field(None, gt=0)
     eventable_type: Optional[str] = Field(None, max_length=255)
@@ -369,7 +369,7 @@ class ChannelConfigBase(BaseModel):
     welcome_message: Optional[str] = None
     offline_message: Optional[str] = None
     business_hours: Optional[Dict[str, Any]] = None
-    assignment_rule: AssignmentRule = Field(default=AssignmentRule.MANUAL)
+    assignment_rule: AssignmentRule = Field(default=AssignmentRule.manual)
     default_assignee: Optional[UUID] = None
 
     @validator('business_hours')

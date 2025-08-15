@@ -31,7 +31,7 @@ class PassengerBase(BaseModel):
     dietary_restrictions: Optional[List[str]] = Field(None, description="Dietary restrictions")
     accessibility_needs: Optional[List[str]] = Field(None, description="Accessibility needs")
     special_requests: Optional[str] = Field(None, description="Special requests")
-    loyalty_tier: LoyaltyTier = Field(LoyaltyTier.BRONZE, description="Loyalty tier")
+    loyalty_tier: LoyaltyTier = Field(LoyaltyTier.bronze, description="Loyalty tier")
     preferred_language: Optional[str] = Field(None, min_length=2, max_length=2, description="Preferred language")
     marketing_consent: bool = Field(False, description="Marketing consent")
     medical_conditions: Optional[List[str]] = Field(None, description="Medical conditions")

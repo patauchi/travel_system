@@ -481,14 +481,14 @@ async def accept_quote(
                 detail="Quote not found"
             )
 
-        if quote.status == QuoteStatus.ACCEPTED:
+        if quote.status == QuoteStatus.accepted:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Quote is already accepted"
             )
 
         # Update quote
-        quote.status = QuoteStatus.ACCEPTED
+        quote.status = QuoteStatus.accepted
         quote.accepted_date = accept_data.accepted_date or date.today()
         quote.updated_at = datetime.utcnow()
         tenant_db.commit()
@@ -531,7 +531,7 @@ async def get_quote_stats(
         total_quotes = tenant_db.query(Quote).filter(Quote.deleted_at.is_(None)).count()
 
         accepted_quotes = tenant_db.query(Quote).filter(
-            Quote.status == QuoteStatus.ACCEPTED,
+            Quote.status == QuoteStatus.accepted,
             Quote.deleted_at.is_(None)
         ).count()
 

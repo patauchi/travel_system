@@ -442,7 +442,7 @@ async def approve_expense(
             detail="Expense not found"
         )
 
-    if expense.status not in [ExpenseStatus.PENDING]:
+    if expense.status not in [ExpenseStatus.pending]:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Expense is not in a state that can be approved/rejected"
@@ -453,11 +453,11 @@ async def approve_expense(
         current_time = datetime.utcnow()
 
         if approval_data.action.lower() == "approve":
-            expense.status = ExpenseStatus.APPROVED
+            expense.status = ExpenseStatus.approved
             expense.approved_by = user_id
             expense.approved_at = current_time
         elif approval_data.action.lower() == "reject":
-            expense.status = ExpenseStatus.REJECTED
+            expense.status = ExpenseStatus.rejected
             expense.rejected_at = current_time
             expense.rejection_reason = approval_data.rejection_reason
         else:
@@ -507,7 +507,7 @@ async def reimburse_expense(
             detail="Expense not found"
         )
 
-    if expense.status != ExpenseStatus.APPROVED:
+    if expense.status != ExpenseStatus.approved:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Expense must be approved before reimbursement"
@@ -520,7 +520,7 @@ async def reimburse_expense(
         )
 
     try:
-        expense.status = ExpenseStatus.REIMBURSED
+        expense.status = ExpenseStatus.reimbursed
         expense.reimbursed_amount = reimbursement_data.amount
         expense.reimbursement_date = reimbursement_data.reimbursement_date
         expense.payment_method = reimbursement_data.payment_method
@@ -615,7 +615,7 @@ async def get_expense_summary(
         ]
 
         # Get pending approval amounts
-        pending_result = query.filter(Expense.status == ExpenseStatus.PENDING).with_entities(
+        pending_result = query.filter(Expense.status == ExpenseStatus.pending).with_entities(
             func.sum(Expense.total_amount).label('total_amount'),
             func.count(Expense.id).label('count')
         ).first()
@@ -625,7 +625,7 @@ async def get_expense_summary(
 
         # Get reimbursable amounts
         reimbursable_result = query.filter(
-            and_(Expense.is_reimbursable == True, Expense.status == ExpenseStatus.APPROVED)
+            and_(Expense.is_reimbursable == True, Expense.status == ExpenseStatus.approved)
         ).with_entities(
             func.sum(Expense.total_amount).label('total_amount'),
             func.count(Expense.id).label('count')

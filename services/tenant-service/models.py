@@ -8,15 +8,15 @@ from datetime import datetime
 
 # Enums
 class UserRole(str, enum.Enum):
-    SUPER_ADMIN = "super_admin"
-    TENANT_ADMIN = "tenant_admin"
+    super_admin = "super_admin"
+    tenant_admin = "tenant_admin"
 
 class TenantStatus(str, enum.Enum):
-    ACTIVE = "active"
-    SUSPENDED = "suspended"
-    TRIAL = "trial"
-    EXPIRED = "expired"
-    PENDING = "pending"
+    active = "active"
+    suspended = "suspended"
+    trial = "trial"
+    expired = "expired"
+    pending = "pending"
 
 class SubscriptionPlan(str, enum.Enum):
     free = "free"
@@ -57,7 +57,7 @@ class Tenant(Base):
     domain = Column(String(255))
     subdomain = Column(String(100), unique=True, index=True)
     schema_name = Column(String(63), unique=True, nullable=False)
-    status = Column(String(50), default=TenantStatus.PENDING)
+    status = Column(String(50), default=TenantStatus.pending)
     subscription_plan = Column(String(50), default="free")
     max_users = Column(Integer, default=5)
     max_storage_gb = Column(Integer, default=10)
@@ -76,7 +76,7 @@ class TenantUser(Base):
     id = Column(String(36), primary_key=True)
     tenant_id = Column(String(36), ForeignKey("shared.central_tenants.id", ondelete="CASCADE"), nullable=False)
     user_id = Column(String(36), ForeignKey("shared.central_users.id", ondelete="CASCADE"), nullable=False)
-    role = Column(String(50), default=UserRole.TENANT_ADMIN)
+    role = Column(String(50), default=UserRole.tenant_admin)
     is_owner = Column(Boolean, default=False)
     permissions = Column(JSONB, default={})
     joined_at = Column(DateTime(timezone=True), default=datetime.utcnow)

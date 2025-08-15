@@ -28,14 +28,14 @@ class Lead(Base):
 
     # Lead specific fields
     lead_source = Column(String(100), nullable=True, index=True)
-    lead_status = Column(SQLEnum(LeadStatus), default=LeadStatus.NEW, index=True)
+    lead_status = Column(SQLEnum(LeadStatus), default=LeadStatus.new, index=True)
     conversion_probability = Column(Integer, nullable=True)  # 0-100%
     expected_close_date = Column(Date, nullable=True)
     estimated_value = Column(Numeric(15, 2), nullable=True)
 
     # Conversion Information
     converted_date = Column(DateTime(timezone=True), nullable=True)
-    interest_level = Column(SQLEnum(InterestLevel), default=InterestLevel.LOW)
+    interest_level = Column(SQLEnum(InterestLevel), default=InterestLevel.low)
     inquiry_type = Column(String(255), nullable=True)
     last_contacted_at = Column(Date, nullable=True)
     is_qualified = Column(Boolean, default=False)

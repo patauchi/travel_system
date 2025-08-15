@@ -112,7 +112,7 @@ class Expense(Base):
     vendor_invoice_number = Column(String(100), nullable=True)
 
     # Status and Approval
-    status = Column(SQLEnum(ExpenseStatus), default=ExpenseStatus.PENDING, index=True)
+    status = Column(SQLEnum(ExpenseStatus), default=ExpenseStatus.pending, index=True)
     submitted_at = Column(DateTime(timezone=True), nullable=True)
     approved_at = Column(DateTime(timezone=True), nullable=True)
     rejected_at = Column(DateTime(timezone=True), nullable=True)

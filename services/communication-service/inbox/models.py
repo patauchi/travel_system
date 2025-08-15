@@ -20,49 +20,49 @@ Base = declarative_base()
 # ============================================
 
 class ChannelType(str, enum.Enum):
-    WHATSAPP = "whatsapp"
-    MESSENGER = "messenger"
-    INSTAGRAM = "instagram"
-    EMAIL = "email"
-    WEB = "web"
-    TWILIO_WHATSAPP = "twilio_whatsapp"
-    TWILIO_CALL = "twilio_call"
-    WHATSAPP_BUSINESS = "whatsapp_business"
-    FACEBOOK_MESSENGER = "facebook_messenger"
-    PERSONAL_WHATSAPP = "personal_whatsapp"
-    GMAIL = "gmail"
-    ZENDESK = "zendesk"
+    whatsapp = "whatsapp"
+    messenger = "messenger"
+    instagram = "instagram"
+    email = "email"
+    web = "web"
+    twilio_whatsapp = "twilio_whatsapp"
+    twilio_call = "twilio_call"
+    whatsapp_business = "whatsapp_business"
+    facebook_messenger = "facebook_messenger"
+    personal_whatsapp = "personal_whatsapp"
+    gmail = "gmail"
+    zendesk = "zendesk"
 
 class ConversationStatus(str, enum.Enum):
-    NEW = "new"
-    OPEN = "open"
-    REPLIED = "replied"
-    QUALIFIED = "qualified"
-    ARCHIVED = "archived"
+    new = "new"
+    open = "open"
+    replied = "replied"
+    qualified = "qualified"
+    archived = "archived"
 
 class Priority(str, enum.Enum):
-    HIGH = "high"
-    NORMAL = "normal"
-    LOW = "low"
+    high = "high"
+    normal = "normal"
+    low = "low"
 
 class MessageDirection(str, enum.Enum):
-    IN = "in"
-    OUT = "out"
+    in_direction = "in"
+    out = "out"
 
 class MessageType(str, enum.Enum):
-    TEXT = "text"
-    IMAGE = "image"
-    DOCUMENT = "document"
-    AUDIO = "audio"
-    VIDEO = "video"
-    LOCATION = "location"
+    text = "text"
+    image = "image"
+    document = "document"
+    audio = "audio"
+    video = "video"
+    location = "location"
 
 class MessageStatus(str, enum.Enum):
-    PENDING = "pending"
-    SENT = "sent"
-    DELIVERED = "delivered"
-    READ = "read"
-    FAILED = "failed"
+    pending = "pending"
+    sent = "sent"
+    delivered = "delivered"
+    read = "read"
+    failed = "failed"
 
 # ============================================
 # INBOX CONVERSATIONS TABLE
@@ -85,8 +85,8 @@ class InboxConversation(Base):
     contact_metadata = Column(JSONB, nullable=True, comment='Additional contact data from platform')
 
     # Status
-    status = Column(SQLEnum(ConversationStatus), default=ConversationStatus.NEW)
-    priority = Column(SQLEnum(Priority), default=Priority.NORMAL)
+    status = Column(SQLEnum(ConversationStatus), default=ConversationStatus.new)
+    priority = Column(SQLEnum(Priority), default=Priority.normal)
     is_spam = Column(Boolean, default=False)
 
     # Content
@@ -149,14 +149,14 @@ class InboxMessage(Base):
     # Message Identification
     external_id = Column(String(255), nullable=True, comment='ID from the external platform')
     direction = Column(SQLEnum(MessageDirection), nullable=False, comment='Incoming or outgoing message')
-    type = Column(SQLEnum(MessageType), default=MessageType.TEXT)
+    type = Column(SQLEnum(MessageType), default=MessageType.text)
 
     # Content
     content = Column(Text, nullable=True)
     media_url = Column(String(500), nullable=True)
 
     # Status
-    status = Column(SQLEnum(MessageStatus), default=MessageStatus.SENT)
+    status = Column(SQLEnum(MessageStatus), default=MessageStatus.sent)
     status_updated_at = Column(DateTime(timezone=True), nullable=True)
 
     # Timestamps

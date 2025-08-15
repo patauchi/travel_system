@@ -287,7 +287,7 @@ async def approve_voucher(
             detail="Voucher not found"
         )
 
-    if voucher.status not in [VoucherStatus.DRAFT, VoucherStatus.PENDING]:
+    if voucher.status not in [VoucherStatus.draft, VoucherStatus.pending]:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Voucher is not in a state that can be approved/rejected"
@@ -298,12 +298,12 @@ async def approve_voucher(
         current_time = datetime.utcnow()
 
         if approval_data.action.lower() == "approve":
-            voucher.status = VoucherStatus.APPROVED
+            voucher.status = VoucherStatus.approved
             voucher.is_approved = True
             voucher.approved_by = user_id
             voucher.approved_date = current_time
         elif approval_data.action.lower() == "reject":
-            voucher.status = VoucherStatus.CANCELLED
+            voucher.status = VoucherStatus.cancelled
             voucher.is_cancelled = True
             voucher.cancelled_by = user_id
             voucher.cancelled_date = current_time
@@ -361,14 +361,14 @@ async def bulk_approve_vouchers(
                 })
                 continue
 
-            if voucher.status not in [VoucherStatus.DRAFT, VoucherStatus.PENDING]:
+            if voucher.status not in [VoucherStatus.draft, VoucherStatus.pending]:
                 failed_vouchers.append({
                     "voucher_id": voucher_id,
                     "error_message": "Voucher is not in a state that can be approved"
                 })
                 continue
 
-            voucher.status = VoucherStatus.APPROVED
+            voucher.status = VoucherStatus.approved
             voucher.is_approved = True
             voucher.approved_by = user_id
             voucher.approved_date = current_time
@@ -416,7 +416,7 @@ async def pay_voucher(
             detail="Voucher not found"
         )
 
-    if voucher.status != VoucherStatus.APPROVED:
+    if voucher.status != VoucherStatus.approved:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Voucher must be approved before payment"
@@ -432,7 +432,7 @@ async def pay_voucher(
         user_id = current_user.get("user_id")
         current_time = datetime.utcnow()
 
-        voucher.status = VoucherStatus.PAID
+        voucher.status = VoucherStatus.paid
         voucher.is_paid = True
         voucher.paid_by = user_id
         voucher.paid_date = current_time
@@ -496,7 +496,7 @@ async def bulk_pay_vouchers(
                 })
                 continue
 
-            if voucher.status != VoucherStatus.APPROVED:
+            if voucher.status != VoucherStatus.approved:
                 failed_vouchers.append({
                     "voucher_id": voucher_id,
                     "error_message": "Voucher must be approved before payment"
@@ -510,7 +510,7 @@ async def bulk_pay_vouchers(
                 })
                 continue
 
-            voucher.status = VoucherStatus.PAID
+            voucher.status = VoucherStatus.paid
             voucher.is_paid = True
             voucher.paid_by = user_id
             voucher.paid_date = current_time
@@ -582,7 +582,7 @@ async def cancel_voucher(
         user_id = current_user.get("user_id")
         current_time = datetime.utcnow()
 
-        voucher.status = VoucherStatus.CANCELLED
+        voucher.status = VoucherStatus.cancelled
         voucher.is_cancelled = True
         voucher.cancelled_by = user_id
         voucher.cancelled_date = current_time

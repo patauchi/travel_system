@@ -31,7 +31,7 @@ class Contact(Base):
     passenger_id = Column(Integer, nullable=True)  # References passengers table if exists
 
     # Contact specific fields
-    contact_status = Column(SQLEnum(ContactStatus), default=ContactStatus.ACTIVE, index=True)
+    contact_status = Column(SQLEnum(ContactStatus), default=ContactStatus.active, index=True)
     is_primary_contact = Column(Boolean, default=False)
     department = Column(String(100), nullable=True)
     reports_to = Column(Integer, ForeignKey('contacts.id', ondelete='SET NULL'), nullable=True)
@@ -48,7 +48,7 @@ class Contact(Base):
     # Communication preferences
     email_opt_in = Column(Boolean, default=True)
     sms_opt_in = Column(Boolean, default=False)
-    preferred_communication = Column(SQLEnum(PreferredCommunication), default=PreferredCommunication.EMAIL)
+    preferred_communication = Column(SQLEnum(PreferredCommunication), default=PreferredCommunication.email)
 
     # Timestamps
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)

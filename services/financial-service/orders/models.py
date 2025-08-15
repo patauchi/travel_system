@@ -34,14 +34,14 @@ class Order(Base):
 
     # Order Information
     order_number = Column(String(50), nullable=False)
-    order_status = Column(SQLEnum(OrderStatus), default=OrderStatus.PENDING, index=True)
+    order_status = Column(SQLEnum(OrderStatus), default=OrderStatus.pending, index=True)
 
     # Financial Details (copied from Quote)
     subtotal = Column(Numeric(15, 2), nullable=False)
     tax_amount = Column(Numeric(15, 2), nullable=False)
     discount_amount = Column(Numeric(15, 2), nullable=False)
     total_amount = Column(Numeric(15, 2), nullable=False)
-    currency = Column(SQLEnum(Currency), default=Currency.USD)
+    currency = Column(SQLEnum(Currency), default=Currency.usd)
 
     # Important Dates
     order_date = Column(Date, nullable=False)
@@ -49,7 +49,7 @@ class Order(Base):
     return_date = Column(Date, nullable=True)
 
     # Payment Information
-    payment_status = Column(SQLEnum(PaymentStatus), default=PaymentStatus.PENDING, index=True)
+    payment_status = Column(SQLEnum(PaymentStatus), default=PaymentStatus.pending, index=True)
     payment_terms = Column(String(100), nullable=True)
     amount_paid = Column(Numeric(15, 2), default=0)
     amount_due = Column(Numeric(15, 2), nullable=False)

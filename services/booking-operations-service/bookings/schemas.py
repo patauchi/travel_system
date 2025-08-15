@@ -35,7 +35,7 @@ class BookingLineBase(BaseModel):
     cancellation_reason: Optional[str] = Field(None, max_length=255, description="Cancellation reason")
     cancellation_code: Optional[str] = Field(None, max_length=50, description="Supplier cancellation code")
     cancellation_fee: Optional[Decimal] = Field(None, ge=0, description="Cancellation fee")
-    risk_level: RiskLevel = Field(RiskLevel.LOW, description="Risk level")
+    risk_level: RiskLevel = Field(RiskLevel.low, description="Risk level")
     booking_notes: Optional[str] = Field(None, description="Booking notes")
     supplier_notes: Optional[str] = Field(None, description="Supplier notes")
     operational_notes: Optional[str] = Field(None, description="Operational notes")

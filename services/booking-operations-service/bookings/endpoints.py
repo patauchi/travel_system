@@ -428,21 +428,21 @@ async def cancel_booking(
         )
 
     # Check if already cancelled
-    if booking.overall_status == BookingOverallStatus.CANCELLED:
+    if booking.overall_status == BookingOverallStatus.cancelled:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Booking is already cancelled"
         )
 
     # Update booking status
-    booking.overall_status = BookingOverallStatus.CANCELLED
+    booking.overall_status = BookingOverallStatus.cancelled
     booking.cancellation_reason = cancellation_data.get("reason", "Customer request")
     booking.cancelled_at = datetime.utcnow()
     booking.updated_at = datetime.utcnow()
 
     # Cancel all booking lines
     for line in booking.booking_lines:
-        line.booking_status = BookingLineStatus.CANCELLED
+        line.booking_status = BookingLineStatus.cancelled
         line.cancellation_reason = cancellation_data.get("reason", "Booking cancelled")
         line.cancelled_at = datetime.utcnow()
 
@@ -499,21 +499,21 @@ async def confirm_booking(
         )
 
     # Check if already confirmed
-    if booking.overall_status == BookingOverallStatus.CONFIRMED:
+    if booking.overall_status == BookingOverallStatus.confirmed:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Booking is already confirmed"
         )
 
     # Update booking status
-    booking.overall_status = BookingOverallStatus.CONFIRMED
+    booking.overall_status = BookingOverallStatus.confirmed
     booking.confirmed_at = datetime.utcnow()
     booking.updated_at = datetime.utcnow()
 
     # Confirm all booking lines
     for line in booking.booking_lines:
-        if line.booking_status == BookingLineStatus.PENDING:
-            line.booking_status = BookingLineStatus.CONFIRMED
+        if line.booking_status == BookingLineStatus.pending:
+            line.booking_status = BookingLineStatus.confirmed
             line.confirmed_at = datetime.utcnow()
 
     try:
@@ -624,7 +624,7 @@ async def get_bookings_statistics(
 
     # Calculate total revenue
     total_revenue = query.filter(
-        Booking.overall_status != BookingOverallStatus.CANCELLED
+        Booking.overall_status != BookingOverallStatus.cancelled
     ).with_entities(func.sum(Booking.total_amount)).scalar() or 0
 
     # Count bookings by month

@@ -28,7 +28,7 @@ class Quote(Base):
 
     # Quote Information
     name = Column(String(200), nullable=False)
-    status = Column(SQLEnum(QuoteStatus), default=QuoteStatus.DRAFT, index=True)
+    status = Column(SQLEnum(QuoteStatus), default=QuoteStatus.draft, index=True)
     is_primary = Column(Boolean, default=False)
 
     # Dates
@@ -47,7 +47,7 @@ class Quote(Base):
     tax_amount = Column(Numeric(15, 2), default=0)
     discount_amount = Column(Numeric(15, 2), default=0)
     total_amount = Column(Numeric(15, 2), default=0)
-    currency = Column(SQLEnum(Currency), default=Currency.USD)
+    currency = Column(SQLEnum(Currency), default=Currency.usd)
     payment_terms = Column(String(100), nullable=True)
 
     # Notes and communications

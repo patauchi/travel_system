@@ -33,7 +33,7 @@ class CancellationPolicyBase(BaseModel):
     name: str = Field(..., min_length=1, max_length=100, description="Policy name")
     code: Optional[str] = Field(None, max_length=50, description="Policy code")
     description: Optional[str] = Field(None, description="Policy description")
-    policy_type: CancellationPolicyType = Field(CancellationPolicyType.MODERATE, description="Policy type")
+    policy_type: CancellationPolicyType = Field(CancellationPolicyType.moderate, description="Policy type")
     cancellation_rules: List[CancellationRuleCreate] = Field(..., min_items=1, description="Cancellation rules")
     modification_allowed: bool = Field(True, description="Modifications allowed")
     modification_deadline_hours: Optional[int] = Field(None, ge=0, description="Modification deadline (hours)")

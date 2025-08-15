@@ -17,7 +17,7 @@ from core.enums import OpportunityStage, TravelType, BudgetLevel
 class OpportunityBase(BaseModel):
     """Base schema for Opportunity"""
     name: str = Field(..., max_length=200)
-    stage: OpportunityStage = OpportunityStage.PROSPECTING
+    stage: OpportunityStage = OpportunityStage.prospecting
     probability: int = Field(25, ge=0, le=100)
     amount: Optional[float] = Field(None, ge=0)
     expected_close_date: Optional[date] = None

@@ -34,7 +34,7 @@ class Service(Base):
     name = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)
     service_type = Column(SQLEnum(ServiceType), nullable=False, index=True)
-    operation_model = Column(SQLEnum(OperationModel), default=OperationModel.NO_DEFINED)
+    operation_model = Column(SQLEnum(OperationModel), default=OperationModel.no_defined)
 
     # Service Configuration
     allowed_destinations = Column(JSON, nullable=True)  # destination ids [1, 3, 5, 9]
@@ -232,7 +232,7 @@ class ServiceParticipant(Base):
     check_in_status = Column(String(20), default='pending')  # pending, checked_in, no_show
 
     # Participant information
-    passenger_type = Column(SQLEnum(PassengerType), default=PassengerType.ADULT)
+    passenger_type = Column(SQLEnum(PassengerType), default=PassengerType.adult)
     special_requirements = Column(JSON, nullable=True)
 
     # Pricing information

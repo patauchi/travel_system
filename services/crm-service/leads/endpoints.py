@@ -50,7 +50,7 @@ async def create_lead(
 
         # Create actor first
         actor_data = {
-            "type": ActorType.LEAD,
+            "type": ActorType.lead,
             "first_name": lead_data.first_name,
             "last_name": lead_data.last_name,
             "company_name": lead_data.company_name,
@@ -449,14 +449,14 @@ async def convert_lead(
                 detail="Lead not found"
             )
 
-        if lead.lead_status == LeadStatus.CONVERTED:
+        if lead.lead_status == LeadStatus.converted:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Lead is already converted"
             )
 
         # Update lead status
-        lead.lead_status = LeadStatus.CONVERTED
+        lead.lead_status = LeadStatus.converted
         lead.converted_date = datetime.utcnow()
         lead.updated_at = datetime.utcnow()
 
@@ -595,7 +595,7 @@ async def get_lead_stats(
         # Basic counts
         total_leads = tenant_db.query(Lead).filter(Lead.deleted_at.is_(None)).count()
         new_leads = tenant_db.query(Lead).filter(
-            Lead.lead_status == LeadStatus.NEW,
+            Lead.lead_status == LeadStatus.new,
             Lead.deleted_at.is_(None)
         ).count()
         qualified_leads = tenant_db.query(Lead).filter(
@@ -603,7 +603,7 @@ async def get_lead_stats(
             Lead.deleted_at.is_(None)
         ).count()
         converted_leads = tenant_db.query(Lead).filter(
-            Lead.lead_status == LeadStatus.CONVERTED,
+            Lead.lead_status == LeadStatus.converted,
             Lead.deleted_at.is_(None)
         ).count()
 

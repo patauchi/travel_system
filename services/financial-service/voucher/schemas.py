@@ -39,7 +39,7 @@ class VoucherBase(BaseModel):
     purpose: str = Field(..., description="Purpose of the voucher")
     cost_center: Optional[str] = Field(None, description="Cost center code")
     project_code: Optional[str] = Field(None, description="Project code")
-    status: VoucherStatus = Field(VoucherStatus.DRAFT, description="Voucher status")
+    status: VoucherStatus = Field(VoucherStatus.draft, description="Voucher status")
     accounting_period: Optional[str] = Field(None, description="Accounting period (YYYY-MM)")
     attachments: Optional[List[str]] = Field(None, description="List of attachment file paths")
     supporting_documents: Optional[str] = Field(None, description="Supporting documents description")

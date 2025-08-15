@@ -52,7 +52,7 @@ class Passenger(Base):
     special_requests = Column(Text, nullable=True)
 
     # Loyalty and Preferences
-    loyalty_tier = Column(SQLEnum(LoyaltyTier), default=LoyaltyTier.BRONZE)
+    loyalty_tier = Column(SQLEnum(LoyaltyTier), default=LoyaltyTier.bronze)
     preferred_language = Column(String(2), nullable=True)  # ISO language code
     marketing_consent = Column(Boolean, default=False)
 

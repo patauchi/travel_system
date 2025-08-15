@@ -17,13 +17,13 @@ from core.enums import LeadStatus, InterestLevel
 class LeadBase(BaseModel):
     """Base schema for Lead"""
     lead_source: Optional[str] = Field(None, max_length=100)
-    lead_status: LeadStatus = LeadStatus.NEW
+    lead_status: LeadStatus = LeadStatus.new
     conversion_probability: Optional[int] = Field(None, ge=0, le=100)
     expected_close_date: Optional[date] = None
     estimated_value: Optional[float] = Field(None, ge=0)
 
     # Conversion Information
-    interest_level: InterestLevel = InterestLevel.LOW
+    interest_level: InterestLevel = InterestLevel.low
     inquiry_type: Optional[str] = Field(None, max_length=255)
     last_contacted_at: Optional[date] = None
     is_qualified: bool = False

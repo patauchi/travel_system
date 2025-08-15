@@ -36,7 +36,7 @@ class Invoice(Base):
 
     # Invoice Information
     invoice_number = Column(String(50), nullable=False)
-    status = Column(SQLEnum(InvoiceStatus), default=InvoiceStatus.DRAFT, index=True)
+    status = Column(SQLEnum(InvoiceStatus), default=InvoiceStatus.draft, index=True)
 
     # Dates
     invoice_date = Column(Date, nullable=False)
@@ -164,7 +164,7 @@ class AccountsReceivable(Base):
     currency = Column(String(3), default='USD')
 
     # Status
-    status = Column(SQLEnum(AccountsReceivableStatus), default=AccountsReceivableStatus.OPEN, index=True)
+    status = Column(SQLEnum(AccountsReceivableStatus), default=AccountsReceivableStatus.open, index=True)
     days_overdue = Column(Integer, default=0)
 
     # Aging buckets
@@ -236,7 +236,7 @@ class AccountsPayable(Base):
     currency = Column(String(3), default='USD')
 
     # Status
-    status = Column(SQLEnum(AccountsPayableStatus), default=AccountsPayableStatus.OPEN, index=True)
+    status = Column(SQLEnum(AccountsPayableStatus), default=AccountsPayableStatus.open, index=True)
     days_overdue = Column(Integer, default=0)
 
     # Payment Terms

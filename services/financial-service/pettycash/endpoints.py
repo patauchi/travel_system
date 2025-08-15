@@ -200,7 +200,7 @@ async def delete_petty_cash_fund(
 
     try:
         fund.deleted_at = datetime.utcnow()
-        fund.status = PettyCashStatus.CLOSED
+        fund.status = PettyCashStatus.closed
         db.commit()
 
         return {"message": "Petty cash fund deleted successfully"}
@@ -250,7 +250,7 @@ async def create_petty_cash_transaction(
         )
 
     # Check balance for withdrawals/expenses
-    if transaction_data.transaction_type in [PettyCashTransactionType.WITHDRAWAL, PettyCashTransactionType.EXPENSE]:
+    if transaction_data.transaction_type in [PettyCashTransactionType.withdrawal, PettyCashTransactionType.expense]:
         if fund.current_balance < transaction_data.amount:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -260,7 +260,7 @@ async def create_petty_cash_transaction(
     try:
         # Calculate new balance
         balance_before = fund.current_balance
-        if transaction_data.transaction_type in [PettyCashTransactionType.DEPOSIT, PettyCashTransactionType.REIMBURSEMENT]:
+        if transaction_data.transaction_type in [PettyCashTransactionType.deposit, PettyCashTransactionType.reimbursement]:
             balance_after = balance_before + transaction_data.amount
         else:
             balance_after = balance_before - transaction_data.amount
@@ -613,7 +613,7 @@ async def replenish_petty_cash_fund(
             petty_cash_id=fund.id,
             transaction_number=f"REP-{fund.fund_code or fund.id}-{int(current_time.timestamp())}",
             transaction_date=current_time,
-            transaction_type=PettyCashTransactionType.DEPOSIT,
+            transaction_type=PettyCashTransactionType.deposit,
             amount=replenishment_data.amount,
             balance_before=balance_before,
             balance_after=balance_after,
@@ -757,8 +757,8 @@ async def get_petty_cash_summary(
                     and_(
                         PettyCashTransaction.petty_cash_id == fund.id,
                         PettyCashTransaction.transaction_type.in_([
-                            PettyCashTransactionType.EXPENSE,
-                            PettyCashTransactionType.WITHDRAWAL
+                            PettyCashTransactionType.expense,
+                            PettyCashTransactionType.withdrawal
                         ])
                     )
                 ).scalar() or 0,
@@ -766,8 +766,8 @@ async def get_petty_cash_summary(
                     and_(
                         PettyCashTransaction.petty_cash_id == fund.id,
                         PettyCashTransaction.transaction_type.in_([
-                            PettyCashTransactionType.DEPOSIT,
-                            PettyCashTransactionType.REIMBURSEMENT
+                            PettyCashTransactionType.deposit,
+                            PettyCashTransactionType.reimbursement
                         ])
                     )
                 ).scalar() or 0,

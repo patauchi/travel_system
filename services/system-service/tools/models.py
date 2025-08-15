@@ -32,7 +32,7 @@ class Note(Base):
     notable_id = Column(BigInteger, nullable=False)
     notable_type = Column(String(50), nullable=False)
     priority = Column(SQLEnum(NotePriority, values_callable=lambda x: [e.value for e in x]),
-                     default=NotePriority.MEDIUM)
+                     default=NotePriority.medium)
     assigned_to = Column(UUID(as_uuid=True), nullable=True)
     created_by = Column(UUID(as_uuid=True), nullable=False)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
@@ -130,8 +130,8 @@ class Task(Base):
     id = Column(BigInteger, primary_key=True, autoincrement=True)
     title = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)
-    status = Column(SQLEnum(TaskStatus, values_callable=lambda x: [e.value for e in x]), default=TaskStatus.PENDING)
-    priority = Column(SQLEnum(TaskPriority, values_callable=lambda x: [e.value for e in x]), default=TaskPriority.LOW)
+    status = Column(SQLEnum(TaskStatus, values_callable=lambda x: [e.value for e in x]), default=TaskStatus.pending)
+    priority = Column(SQLEnum(TaskPriority, values_callable=lambda x: [e.value for e in x]), default=TaskPriority.low)
     due_date = Column(Date, nullable=True)
     completed_at = Column(Date, nullable=True)
     taskable_id = Column(BigInteger, nullable=True)  # ID del modelo relacionado
@@ -181,7 +181,7 @@ class Attachment(Base):
     original_name = Column(String(255), nullable=False)  # Nombre original del archivo
     file_name = Column(String(255), nullable=False)  # Nombre del archivo en el servidor
     file_path = Column(String(500), nullable=False)  # Ruta completa del archivo
-    disk = Column(SQLEnum(DiskType, values_callable=lambda x: [e.value for e in x]), default=DiskType.PUBLIC)  # Disco de almacenamiento
+    disk = Column(SQLEnum(DiskType, values_callable=lambda x: [e.value for e in x]), default=DiskType.public)  # Disco de almacenamiento
     description = Column(Text, nullable=True)  # Descripción del archivo
     attachable_id = Column(BigInteger, nullable=True)  # ID del modelo relacionado
     attachable_type = Column(String(255), nullable=True)  # Tipo del modelo (Lead, Quote, etc.)
@@ -230,7 +230,7 @@ class Event(Base):
     end_date = Column(DateTime(timezone=True), nullable=True)
     all_day = Column(Boolean, default=False)
     location = Column(String(255), nullable=True)
-    status = Column(SQLEnum(EventStatus, values_callable=lambda x: [e.value for e in x]), default=EventStatus.SCHEDULED)
+    status = Column(SQLEnum(EventStatus, values_callable=lambda x: [e.value for e in x]), default=EventStatus.scheduled)
     notes = Column(Text, nullable=True)
     eventable_id = Column(BigInteger, nullable=True)  # ID del modelo relacionado
     eventable_type = Column(String(255), nullable=True)  # Tipo del modelo (Lead, Contact, etc.)
@@ -332,7 +332,7 @@ class ChannelConfig(Base):
     business_hours = Column(JSONB, nullable=True, comment='Operating hours per day {"mon": {"start": "09:00", "end": "18:00"}}')
 
     # Assignment Configuration
-    assignment_rule = Column(SQLEnum(AssignmentRule, values_callable=lambda x: [e.value for e in x]), default=AssignmentRule.MANUAL)
+    assignment_rule = Column(SQLEnum(AssignmentRule, values_callable=lambda x: [e.value for e in x]), default=AssignmentRule.manual)
     default_assignee = Column(UUID(as_uuid=True), nullable=True)  # Reference to users without FK constraint
 
     # Timestamps

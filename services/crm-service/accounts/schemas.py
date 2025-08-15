@@ -17,7 +17,7 @@ from core.enums import AccountType, AccountStatus, PaymentMethod, RiskLevel
 class AccountBase(BaseModel):
     """Base schema for Account"""
     account_type: AccountType
-    account_status: AccountStatus = AccountStatus.PROSPECT
+    account_status: AccountStatus = AccountStatus.prospect
     parent_account_id: Optional[int] = None
     is_following: bool = False
 
@@ -47,7 +47,7 @@ class AccountBase(BaseModel):
     # Segmentation information
     customer_segment: Optional[str] = Field(None, max_length=50)
     loyalty_points: int = Field(0, ge=0)
-    risk_level: RiskLevel = RiskLevel.LOW
+    risk_level: RiskLevel = RiskLevel.low
 
     # Industry association
     industry_id: Optional[int] = None
@@ -91,9 +91,9 @@ class AccountCreate(AccountBase):
     @validator('company_name', 'first_name')
     def validate_name_required(cls, v, values):
         account_type = values.get('account_type')
-        if account_type == AccountType.BUSINESS and not values.get('company_name'):
+        if account_type == AccountType.business and not values.get('company_name'):
             raise ValueError('Company name is required for business accounts')
-        elif account_type == AccountType.PERSON and not values.get('first_name'):
+        elif account_type == AccountType.person and not values.get('first_name'):
             raise ValueError('First name is required for person accounts')
         return v
 

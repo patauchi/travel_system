@@ -10,179 +10,179 @@ import enum
 # ============================================
 
 class SupplierType(str, enum.Enum):
-    INDIVIDUAL = "individual"
-    COMPANY = "company"
-    GOVERNMENT = "government"
+    individual = "individual"
+    company = "company"
+    government = "government"
 
 class SupplierStatus(str, enum.Enum):
-    ACTIVE = "active"
-    INACTIVE = "inactive"
-    BLACKLIST = "blacklist"
+    active = "active"
+    inactive = "inactive"
+    blacklist = "blacklist"
 
 # ============================================
 # SERVICE ENUMS
 # ============================================
 
 class ServiceType(str, enum.Enum):
-    ACCOMMODATION = "accommodation"
-    TRANSFER = "transfer"
-    TOUR = "tour"
-    TRANSPORT = "transport"
-    RESTAURANT = "restaurant"
-    TICKET = "ticket"
-    GUIDE = "guide"
-    EQUIPMENT = "equipment"
-    OTHER = "other"
+    accommodation = "accommodation"
+    transfer = "transfer"
+    tour = "tour"
+    transport = "transport"
+    restaurant = "restaurant"
+    ticket = "ticket"
+    guide = "guide"
+    equipment = "equipment"
+    other = "other"
 
 class OperationModel(str, enum.Enum):
-    NO_DEFINED = "no_defined"
-    DIRECT = "direct"
-    RESALE = "resale"
-    WHITE_LABEL = "white_label"
-    HYBRID = "hybrid"
+    no_defined = "no_defined"
+    direct = "direct"
+    resale = "resale"
+    white_label = "white_label"
+    hybrid = "hybrid"
 
 class TransferType(str, enum.Enum):
-    PRIVATE = "private"
-    SHARED = "shared"
-    SHUTTLE = "shuttle"
-    EXECUTIVE = "executive"
-    LUXURY = "luxury"
+    private = "private"
+    shared = "shared"
+    shuttle = "shuttle"
+    executive = "executive"
+    luxury = "luxury"
 
 class VehicleType(str, enum.Enum):
-    SEDAN = "sedan"
-    SUV = "suv"
-    VAN = "van"
-    MINIBUS = "minibus"
-    BUS = "bus"
-    LIMOUSINE = "limousine"
-    HELICOPTER = "helicopter"
-    BOAT = "boat"
-    OTHER = "other"
+    sedan = "sedan"
+    suv = "suv"
+    van = "van"
+    minibus = "minibus"
+    bus = "bus"
+    limousine = "limousine"
+    helicopter = "helicopter"
+    boat = "boat"
+    other = "other"
 
 class TourType(str, enum.Enum):
-    PRIVATE = "private"
-    GROUP = "group"
-    REGULAR = "regular"
-    VIP = "vip"
+    private = "private"
+    group = "group"
+    regular = "regular"
+    vip = "vip"
 
 class DurationType(str, enum.Enum):
-    HOURS = "hours"
-    HALF_DAY = "half_day"
-    FULL_DAY = "full_day"
-    MULTI_DAY = "multi_day"
+    hours = "hours"
+    half_day = "half_day"
+    full_day = "full_day"
+    multi_day = "multi_day"
 
 # ============================================
 # BOOKING ENUMS
 # ============================================
 
 class BookingOverallStatus(str, enum.Enum):
-    PENDING = "pending"
-    IN_PROGRESS = "in_progress"
-    CONFIRMED = "confirmed"
-    PARTIALLY_CANCELLED = "partially_cancelled"
-    CANCELLED = "cancelled"
-    COMPLETED = "completed"
-    ARCHIVED = "archived"
+    pending = "pending"
+    in_progress = "in_progress"
+    confirmed = "confirmed"
+    partially_cancelled = "partially_cancelled"
+    cancelled = "cancelled"
+    completed = "completed"
+    archived = "archived"
 
 class BookingLineStatus(str, enum.Enum):
-    PENDING = "pending"
-    CONFIRMING = "confirming"
-    CONFIRMED = "confirmed"
-    WAITLISTED = "waitlisted"
-    MODIFIED = "modified"
-    CANCELLED = "cancelled"
-    FAILED = "failed"
-    EXPIRED = "expired"
-    COMPLETED = "completed"
-    NO_SHOW = "no_show"
+    pending = "pending"
+    confirming = "confirming"
+    confirmed = "confirmed"
+    waitlisted = "waitlisted"
+    modified = "modified"
+    cancelled = "cancelled"
+    failed = "failed"
+    expired = "expired"
+    completed = "completed"
+    no_show = "no_show"
 
 class RiskLevel(str, enum.Enum):
-    LOW = "low"
-    MEDIUM = "medium"
-    HIGH = "high"
-    CRITICAL = "critical"
+    low = "low"
+    medium = "medium"
+    high = "high"
+    critical = "critical"
 
 class ServiceOperationStatus(str, enum.Enum):
-    PLANNED = "planned"
-    READY = "ready"
-    IN_PROGRESS = "in_progress"
-    COMPLETED = "completed"
-    CANCELLED = "cancelled"
-    DELAYED = "delayed"
-    INCIDENT = "incident"
+    planned = "planned"
+    ready = "ready"
+    in_progress = "in_progress"
+    completed = "completed"
+    cancelled = "cancelled"
+    delayed = "delayed"
+    incident = "incident"
 
 class OperationalAlert(str, enum.Enum):
-    NONE = "none"
-    WEATHER = "weather"
-    TRAFFIC = "traffic"
-    SUPPLIER_ISSUE = "supplier_issue"
-    PASSENGER_ISSUE = "passenger_issue"
-    DOCUMENTATION = "documentation"
-    PAYMENT = "payment"
-    OTHER = "other"
+    none = "none"
+    weather = "weather"
+    traffic = "traffic"
+    supplier_issue = "supplier_issue"
+    passenger_issue = "passenger_issue"
+    documentation = "documentation"
+    payment = "payment"
+    other = "other"
 
 # ============================================
 # PASSENGER ENUMS
 # ============================================
 
 class PassengerGender(str, enum.Enum):
-    MALE = "M"
-    FEMALE = "F"
-    OTHER = "O"
+    male = "M"
+    female = "F"
+    other = "O"
 
 class DocumentType(str, enum.Enum):
-    PASSPORT = "passport"
-    NATIONAL_ID = "national_id"
-    DRIVER_LICENSE = "driver_license"
-    BIRTH_CERTIFICATE = "birth_certificate"
-    OTHER = "other"
+    passport = "passport"
+    national_id = "national_id"
+    driver_license = "driver_license"
+    birth_certificate = "birth_certificate"
+    other = "other"
 
 class LoyaltyTier(str, enum.Enum):
-    BRONZE = "bronze"
-    SILVER = "silver"
-    GOLD = "gold"
-    PLATINUM = "platinum"
+    bronze = "bronze"
+    silver = "silver"
+    gold = "gold"
+    platinum = "platinum"
 
 # ============================================
 # RATE ENUMS
 # ============================================
 
 class RateType(str, enum.Enum):
-    STANDARD = "standard"
-    SEASONAL = "seasonal"
-    PROMOTIONAL = "promotional"
-    SPECIAL = "special"
-    CONTRACT = "contract"
-    PACKAGE = "package"
+    standard = "standard"
+    seasonal = "seasonal"
+    promotional = "promotional"
+    special = "special"
+    contract = "contract"
+    package = "package"
 
 class PricingModel(str, enum.Enum):
-    PER_PERSON = "per_person"
-    PER_GROUP = "per_group"
-    PER_VEHICLE = "per_vehicle"
-    PER_ROOM = "per_room"
-    PER_HOUR = "per_hour"
-    PER_DAY = "per_day"
-    PER_UNIT = "per_unit"
-    TIERED = "tiered"
-    DYNAMIC = "dynamic"
+    per_person = "per_person"
+    per_group = "per_group"
+    per_vehicle = "per_vehicle"
+    per_room = "per_room"
+    per_hour = "per_hour"
+    per_day = "per_day"
+    per_unit = "per_unit"
+    tiered = "tiered"
+    dynamic = "dynamic"
 
 class SeasonType(str, enum.Enum):
-    LOW = "low"
-    SHOULDER = "shoulder"
-    HIGH = "high"
-    PEAK = "peak"
+    low = "low"
+    shoulder = "shoulder"
+    high = "high"
+    peak = "peak"
 
 class CancellationPolicyType(str, enum.Enum):
-    FLEXIBLE = "flexible"
-    MODERATE = "moderate"
-    STRICT = "strict"
-    SUPER_STRICT = "super_strict"
-    NON_REFUNDABLE = "non_refundable"
-    CUSTOM = "custom"
+    flexible = "flexible"
+    moderate = "moderate"
+    strict = "strict"
+    super_strict = "super_strict"
+    non_refundable = "non_refundable"
+    custom = "custom"
 
 class PassengerType(str, enum.Enum):
-    ADULT = "adult"
-    CHILD = "child"
-    INFANT = "infant"
-    SENIOR = "senior"
-    STUDENT = "student"
+    adult = "adult"
+    child = "child"
+    infant = "infant"
+    senior = "senior"
+    student = "student"

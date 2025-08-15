@@ -81,9 +81,9 @@ class Actor(Base):
     )
 
     def __repr__(self):
-        if self.type == ActorType.LEAD:
+        if self.type == ActorType.lead:
             name = f"{self.first_name or ''} {self.last_name or ''}".strip()
-        elif self.type == ActorType.CONTACT:
+        elif self.type == ActorType.contact:
             name = f"{self.first_name or ''} {self.last_name or ''}".strip()
         else:  # ACCOUNT
             name = self.company_name or f"{self.first_name or ''} {self.last_name or ''}".strip()

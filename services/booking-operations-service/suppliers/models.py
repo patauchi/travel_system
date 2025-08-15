@@ -30,7 +30,7 @@ class Supplier(Base):
     name = Column(String(255), nullable=False)
     legal_name = Column(String(255), nullable=True)
     tax_id = Column(String(50), nullable=True)
-    type = Column(SQLEnum(SupplierType), default=SupplierType.COMPANY)
+    type = Column(SQLEnum(SupplierType), default=SupplierType.company)
 
     # Contact Information (JSON fields)
     contact_info = Column(JSON, nullable=True)  # {phones, emails, websites, social_media}
@@ -47,7 +47,7 @@ class Supplier(Base):
     allowed_destinations = Column(JSON, nullable=True)  # destination ids {1, 3, 5, 9}
 
     # Status and Rating
-    status = Column(SQLEnum(SupplierStatus), default=SupplierStatus.ACTIVE, index=True)
+    status = Column(SQLEnum(SupplierStatus), default=SupplierStatus.active, index=True)
     ratings = Column(Numeric(3, 2), nullable=True)  # 0.00 to 5.00
 
     # Additional Data

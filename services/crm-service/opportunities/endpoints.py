@@ -386,10 +386,10 @@ async def convert_opportunity(
 
         # Update opportunity
         if convert_data.close_as_won:
-            opportunity.stage = OpportunityStage.CLOSED_WON
+            opportunity.stage = OpportunityStage.closed_won
             opportunity.probability = 100
         else:
-            opportunity.stage = OpportunityStage.CLOSED_LOST
+            opportunity.stage = OpportunityStage.closed_lost
             opportunity.probability = 0
 
         opportunity.is_closed = True
@@ -452,12 +452,12 @@ async def get_opportunity_stats(
         ).count()
 
         closed_won = tenant_db.query(Opportunity).filter(
-            Opportunity.stage == OpportunityStage.CLOSED_WON,
+            Opportunity.stage == OpportunityStage.closed_won,
             Opportunity.deleted_at.is_(None)
         ).count()
 
         closed_lost = tenant_db.query(Opportunity).filter(
-            Opportunity.stage == OpportunityStage.CLOSED_LOST,
+            Opportunity.stage == OpportunityStage.closed_lost,
             Opportunity.deleted_at.is_(None)
         ).count()
 
@@ -536,7 +536,7 @@ async def bulk_action_opportunities(
                 opportunity.probability = bulk_action.probability
                 updated_count += 1
             elif bulk_action.action == "close_won":
-                opportunity.stage = OpportunityStage.CLOSED_WON
+                opportunity.stage = OpportunityStage.closed_won
                 opportunity.is_closed = True
                 opportunity.probability = 100
                 opportunity.actual_close_date = date.today()
@@ -544,7 +544,7 @@ async def bulk_action_opportunities(
                     opportunity.close_reason = bulk_action.close_reason
                 updated_count += 1
             elif bulk_action.action == "close_lost":
-                opportunity.stage = OpportunityStage.CLOSED_LOST
+                opportunity.stage = OpportunityStage.closed_lost
                 opportunity.is_closed = True
                 opportunity.probability = 0
                 opportunity.actual_close_date = date.today()

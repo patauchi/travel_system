@@ -26,7 +26,7 @@ class CancellationPolicy(Base):
     name = Column(String(100), nullable=False)
     code = Column(String(50), nullable=True, unique=True)
     description = Column(Text, nullable=True)
-    policy_type = Column(SQLEnum(CancellationPolicyType), default=CancellationPolicyType.MODERATE)
+    policy_type = Column(SQLEnum(CancellationPolicyType), default=CancellationPolicyType.moderate)
 
     # Cancellation Rules (JSON structure for flexibility)
     cancellation_rules = Column(JSON, nullable=False)
@@ -158,12 +158,12 @@ class CancellationPolicy(Base):
 
     def is_flexible_policy(self) -> bool:
         """Check if this is a flexible cancellation policy"""
-        return self.policy_type == CancellationPolicyType.FLEXIBLE
+        return self.policy_type == CancellationPolicyType.flexible
 
     def is_strict_policy(self) -> bool:
         """Check if this is a strict cancellation policy"""
         return self.policy_type in [
-            CancellationPolicyType.STRICT,
-            CancellationPolicyType.SUPER_STRICT,
-            CancellationPolicyType.NON_REFUNDABLE
+            CancellationPolicyType.strict,
+            CancellationPolicyType.super_strict,
+            CancellationPolicyType.non_refundable
         ]

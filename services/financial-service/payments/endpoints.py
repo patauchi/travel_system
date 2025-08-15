@@ -239,17 +239,17 @@ async def process_payment(
 
         # Validate payment method support
         payment_method = payment_request.payment_method
-        if payment_method == PaymentMethod.CREDIT_CARD and not gateway.supports_credit_cards:
+        if payment_method == PaymentMethod.credit_card and not gateway.supports_credit_cards:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Gateway does not support credit cards"
             )
-        elif payment_method == PaymentMethod.DEBIT_CARD and not gateway.supports_debit_cards:
+        elif payment_method == PaymentMethod.debit_card and not gateway.supports_debit_cards:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Gateway does not support debit cards"
             )
-        elif payment_method == PaymentMethod.BANK_TRANSFER and not gateway.supports_bank_transfer:
+        elif payment_method == PaymentMethod.bank_transfer and not gateway.supports_bank_transfer:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Gateway does not support bank transfers"
@@ -279,7 +279,7 @@ async def process_payment(
             amount=payment_request.amount,
             currency=payment_request.currency,
             payment_method=payment_request.payment_method,
-            payment_type=PaymentType.FULL if payment_request.amount else PaymentType.PARTIAL,
+            payment_type=PaymentType.full if payment_request.amount else PaymentType.partial,
             processed_by=current_user.get("user_id"),
             status="processing"
         )
@@ -463,8 +463,8 @@ async def refund_payment(
             amount=refund_amount,
             currency=payment.currency,
             payment_method=payment.payment_method,
-            payment_type=PaymentType.REFUND,
-            transaction_type=TransactionType.REFUND,
+            payment_type=PaymentType.refund,
+            transaction_type=TransactionType.refund,
             is_refund=True,
             refund_reason=refund_request.reason,
             original_payment_id=payment_id,

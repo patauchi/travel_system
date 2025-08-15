@@ -41,7 +41,7 @@ class Rate(Base):
     valid_to = Column(Date, nullable=False)
 
     # Season and schedule
-    season_type = Column(SQLEnum(SeasonType), default=SeasonType.LOW)
+    season_type = Column(SQLEnum(SeasonType), default=SeasonType.low)
     applicable_days = Column(JSON, nullable=True)  # [1,2,3,4,5] días de la semana
     blocked_dates = Column(JSON, nullable=True)  # fechas específicas bloqueadas
 
@@ -162,7 +162,7 @@ class RatePassengerPrice(Base):
     variant_id = Column(Integer, ForeignKey('rate_variants.id', ondelete='CASCADE'), nullable=True)
 
     # Passenger category
-    passenger_category = Column(SQLEnum(PassengerType), default=PassengerType.ADULT)
+    passenger_category = Column(SQLEnum(PassengerType), default=PassengerType.adult)
 
     # Nationality differentiation
     nationality_type = Column(String(20), default='all')  # local, foreign, all
@@ -384,7 +384,7 @@ class PackageRatePassengerPrice(Base):
     package_rate_id = Column(Integer, ForeignKey('package_rates.id', ondelete='CASCADE'), nullable=False)
 
     # Passenger category
-    passenger_category = Column(SQLEnum(PassengerType), default=PassengerType.ADULT)
+    passenger_category = Column(SQLEnum(PassengerType), default=PassengerType.adult)
 
     # Pricing
     price = Column(Numeric(12, 2), nullable=False)

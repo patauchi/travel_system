@@ -41,8 +41,8 @@ class Payment(Base):
 
     # Payment Details
     payment_method = Column(SQLEnum(PaymentMethod), nullable=False)
-    payment_type = Column(SQLEnum(PaymentType), default=PaymentType.PARTIAL)
-    transaction_type = Column(SQLEnum(TransactionType), default=TransactionType.PAYMENT)
+    payment_type = Column(SQLEnum(PaymentType), default=PaymentType.partial)
+    transaction_type = Column(SQLEnum(TransactionType), default=TransactionType.payment)
 
     # Transaction Details
     reference_number = Column(String(100), nullable=True)

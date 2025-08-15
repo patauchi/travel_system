@@ -38,7 +38,7 @@ class ServiceOperation(Base):
     actual_end_datetime = Column(DateTime(timezone=True), nullable=True)
 
     # Operation Status
-    operation_status = Column(SQLEnum(ServiceOperationStatus), default=ServiceOperationStatus.PLANNED, index=True)
+    operation_status = Column(SQLEnum(ServiceOperationStatus), default=ServiceOperationStatus.planned, index=True)
 
     # Service Information (denormalized for quick access)
     service_type = Column(String(50), nullable=False)  # tour/transfer/flight/hotel/activity
@@ -133,11 +133,11 @@ class ServiceOperation(Base):
 
     def is_in_progress(self):
         """Check if operation is currently in progress"""
-        return self.operation_status == ServiceOperationStatus.IN_PROGRESS
+        return self.operation_status == ServiceOperationStatus.in_progress
 
     def is_completed(self):
         """Check if operation is completed"""
-        return self.operation_status == ServiceOperationStatus.COMPLETED
+        return self.operation_status == ServiceOperationStatus.completed
 
     def has_quality_issues(self):
         """Check if operation has quality issues"""

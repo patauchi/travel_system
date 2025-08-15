@@ -33,7 +33,7 @@ class Booking(Base):
     external_reference = Column(String(100), nullable=True)
 
     # Overall Status
-    overall_status = Column(SQLEnum(BookingOverallStatus), default=BookingOverallStatus.PENDING, index=True)
+    overall_status = Column(SQLEnum(BookingOverallStatus), default=BookingOverallStatus.pending, index=True)
 
     # Progress Tracking
     total_services = Column(Integer, default=0)
@@ -129,7 +129,7 @@ class BookingLine(Base):
     handled_by = Column(Integer, nullable=True)  # References users.id
 
     # Booking Status
-    booking_status = Column(SQLEnum(BookingLineStatus), default=BookingLineStatus.PENDING)
+    booking_status = Column(SQLEnum(BookingLineStatus), default=BookingLineStatus.pending)
 
     # Supplier Confirmation
     supplier_confirmation_code = Column(String(100), nullable=True)
@@ -168,7 +168,7 @@ class BookingLine(Base):
     cancellation_confirmed = Column(Boolean, default=False)
 
     # Risk and Alerts
-    risk_level = Column(SQLEnum(RiskLevel), default=RiskLevel.LOW)
+    risk_level = Column(SQLEnum(RiskLevel), default=RiskLevel.low)
 
     # Notes
     booking_notes = Column(Text, nullable=True)  # Notes about the booking process
@@ -200,15 +200,15 @@ class BookingLine(Base):
 
     def is_confirmed(self):
         """Check if booking line is confirmed"""
-        return self.booking_status == BookingLineStatus.CONFIRMED
+        return self.booking_status == BookingLineStatus.confirmed
 
     def is_cancelled(self):
         """Check if booking line is cancelled"""
-        return self.booking_status == BookingLineStatus.CANCELLED
+        return self.booking_status == BookingLineStatus.cancelled
 
     def needs_reconfirmation(self):
         """Check if booking line needs reconfirmation"""
-        return self.booking_status in [BookingLineStatus.PENDING, BookingLineStatus.CONFIRMING]
+        return self.booking_status in [BookingLineStatus.pending, BookingLineStatus.confirming]
 
 
 # ============================================
@@ -245,7 +245,7 @@ class BookingPassenger(Base):
     price_notes = Column(Text, nullable=True)  # "Free infant on lap", "Child discount applied"
 
     # Service Status
-    confirmation_status = Column(SQLEnum(BookingLineStatus), default=BookingLineStatus.PENDING)
+    confirmation_status = Column(SQLEnum(BookingLineStatus), default=BookingLineStatus.pending)
     confirmed_at = Column(DateTime(timezone=True), nullable=True)
     confirmation_reference = Column(String(100), nullable=True)  # Supplier confirmation for this pax
 
@@ -292,7 +292,7 @@ class BookingPassenger(Base):
 
     def is_confirmed(self):
         """Check if passenger is confirmed for the service"""
-        return self.confirmation_status == BookingLineStatus.CONFIRMED
+        return self.confirmation_status == BookingLineStatus.confirmed
 
     def calculate_commission(self):
         """Calculate commission amount based on price difference"""

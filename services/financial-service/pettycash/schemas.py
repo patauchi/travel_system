@@ -26,7 +26,7 @@ class PettyCashBase(BaseModel):
     minimum_balance: Decimal = Field(0, description="Minimum balance threshold")
     maximum_balance: Optional[Decimal] = Field(None, description="Maximum balance allowed")
     replenishment_amount: Optional[Decimal] = Field(None, description="Standard replenishment amount")
-    status: PettyCashStatus = Field(PettyCashStatus.OPEN, description="Status of the fund")
+    status: PettyCashStatus = Field(PettyCashStatus.open, description="Status of the fund")
     is_active: bool = Field(True, description="Whether the fund is active")
     reconciliation_frequency: str = Field("monthly", description="How often to reconcile (daily, weekly, monthly)")
     requires_receipt: bool = Field(True, description="Whether receipts are required for transactions")

@@ -186,7 +186,7 @@ async def update_invoice(
         )
 
     # Check if invoice can be updated
-    if invoice.status in [InvoiceStatus.PAID]:
+    if invoice.status in [InvoiceStatus.paid]:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Cannot update paid invoices"
@@ -232,7 +232,7 @@ async def delete_invoice(
         )
 
     # Check if invoice can be deleted
-    if invoice.status in [InvoiceStatus.SENT, InvoiceStatus.PARTIAL_PAID, InvoiceStatus.PAID]:
+    if invoice.status in [InvoiceStatus.sent, InvoiceStatus.partial_paid, InvoiceStatus.paid]:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Cannot delete sent or paid invoices"
@@ -276,7 +276,7 @@ async def send_invoice(
             detail="Invoice not found"
         )
 
-    if invoice.status not in [InvoiceStatus.DRAFT, InvoiceStatus.SENT]:
+    if invoice.status not in [InvoiceStatus.draft, InvoiceStatus.sent]:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invoice must be in draft or sent status to send"
@@ -284,7 +284,7 @@ async def send_invoice(
 
     try:
         # Update invoice status
-        invoice.status = InvoiceStatus.SENT
+        invoice.status = InvoiceStatus.sent
         invoice.sent_date = date.today()
         invoice.updated_at = datetime.utcnow()
 
@@ -348,10 +348,10 @@ async def record_invoice_payment(
 
         # Update status based on balance
         if invoice.balance_due == 0:
-            invoice.status = InvoiceStatus.PAID
+            invoice.status = InvoiceStatus.paid
             invoice.paid_date = payment_data.payment_date
         elif invoice.paid_amount > 0:
-            invoice.status = InvoiceStatus.PARTIAL_PAID
+            invoice.status = InvoiceStatus.partial_paid
 
         invoice.updated_at = datetime.utcnow()
 
@@ -364,7 +364,7 @@ async def record_invoice_payment(
             ar_record.paid_amount += payment_data.amount
             ar_record.balance -= payment_data.amount
             if ar_record.balance == 0:
-                ar_record.status = AccountsReceivableStatus.PAID
+                ar_record.status = AccountsReceivableStatus.paid
 
         db.commit()
 
@@ -515,7 +515,7 @@ async def write_off_receivable(
         ar_record.balance -= write_off_data.amount
 
         if ar_record.balance == 0:
-            ar_record.status = AccountsReceivableStatus.WRITTEN_OFF
+            ar_record.status = AccountsReceivableStatus.written_off
 
         ar_record.updated_at = current_time
         db.commit()

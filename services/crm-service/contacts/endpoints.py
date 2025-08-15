@@ -50,7 +50,7 @@ async def create_contact(
 
         # Create actor first
         actor_data = {
-            "type": ActorType.CONTACT,
+            "type": ActorType.contact,
             "first_name": contact_data.first_name,
             "last_name": contact_data.last_name,
             "company_name": contact_data.company_name,
@@ -549,7 +549,7 @@ async def get_contact_stats(
         # Basic counts
         total_contacts = tenant_db.query(Contact).filter(Contact.deleted_at.is_(None)).count()
         active_contacts = tenant_db.query(Contact).filter(
-            Contact.contact_status == ContactStatus.ACTIVE,
+            Contact.contact_status == ContactStatus.active,
             Contact.deleted_at.is_(None)
         ).count()
         primary_contacts = tenant_db.query(Contact).filter(

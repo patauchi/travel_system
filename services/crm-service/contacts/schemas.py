@@ -16,7 +16,7 @@ from core.enums import ContactStatus, Gender, PreferredCommunication
 
 class ContactBase(BaseModel):
     """Base schema for Contact"""
-    contact_status: ContactStatus = ContactStatus.ACTIVE
+    contact_status: ContactStatus = ContactStatus.active
     is_primary_contact: bool = False
     department: Optional[str] = Field(None, max_length=100)
     reports_to: Optional[int] = None
@@ -33,7 +33,7 @@ class ContactBase(BaseModel):
     # Communication preferences
     email_opt_in: bool = True
     sms_opt_in: bool = False
-    preferred_communication: PreferredCommunication = PreferredCommunication.EMAIL
+    preferred_communication: PreferredCommunication = PreferredCommunication.email
 
     @validator('passport_expiry')
     def validate_passport_expiry(cls, v):

@@ -101,8 +101,8 @@ class Permission(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name = Column(String(100), unique=True, nullable=False, index=True)
-    resource = Column(SQLEnum(ResourceType), nullable=False)
-    action = Column(SQLEnum(PermissionAction), nullable=False)
+    resource = Column(SQLEnum(ResourceType, values_callable=lambda x: [e.value for e in x]), nullable=False)
+    action = Column(SQLEnum(PermissionAction, values_callable=lambda x: [e.value for e in x]), nullable=False)
     description = Column(Text)
     conditions = Column(JSONB)  # Optional conditions for the permission
     is_active = Column(Boolean, default=True)
@@ -159,7 +159,7 @@ class User(Base):
     time_format = Column(String(10), default='24h')
 
     # Status and Security
-    status = Column(SQLEnum(UserStatus), default=UserStatus.ACTIVE)
+    status = Column(SQLEnum(UserStatus, values_callable=lambda x: [e.value for e in x]), default=UserStatus.active)
     is_active = Column(Boolean, default=True)
     is_verified = Column(Boolean, default=False)
     email_verified_at = Column(DateTime(timezone=True))

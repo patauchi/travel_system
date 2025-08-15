@@ -43,7 +43,7 @@ class PettyCash(Base):
     replenishment_amount = Column(Numeric(15, 2), nullable=True)
 
     # Status
-    status = Column(SQLEnum(PettyCashStatus), default=PettyCashStatus.OPEN, index=True)
+    status = Column(SQLEnum(PettyCashStatus), default=PettyCashStatus.open, index=True)
     is_active = Column(Boolean, default=True)
 
     # Reconciliation

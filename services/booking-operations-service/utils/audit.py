@@ -18,20 +18,20 @@ from models_base import Base
 
 class AuditAction(str, Enum):
     """Audit action types"""
-    CREATE = "CREATE"
-    UPDATE = "UPDATE"
-    DELETE = "DELETE"
-    SOFT_DELETE = "SOFT_DELETE"
-    RESTORE = "RESTORE"
-    STATUS_CHANGE = "STATUS_CHANGE"
-    CANCEL = "CANCEL"
-    CONFIRM = "CONFIRM"
-    APPROVE = "APPROVE"
-    REJECT = "REJECT"
-    LOGIN = "LOGIN"
-    LOGOUT = "LOGOUT"
-    EXPORT = "EXPORT"
-    IMPORT = "IMPORT"
+    create = "CREATE"
+    update = "UPDATE"
+    delete = "DELETE"
+    soft_delete = "SOFT_DELETE"
+    restore = "RESTORE"
+    status_change = "STATUS_CHANGE"
+    cancel = "CANCEL"
+    confirm = "CONFIRM"
+    approve = "APPROVE"
+    reject = "REJECT"
+    login = "LOGIN"
+    logout = "LOGOUT"
+    export = "EXPORT"
+    import_action = "IMPORT"
 
 
 class AuditLog(Base):
@@ -190,7 +190,7 @@ class AuditLogger:
         return self.log_action(
             entity_type=entity_type,
             entity_id=entity_id,
-            action=AuditAction.CREATE,
+            action=AuditAction.create,
             user=user,
             new_values=entity_data,
             description=f"Created {entity_type} #{entity_id}",
@@ -225,7 +225,7 @@ class AuditLogger:
         return self.log_action(
             entity_type=entity_type,
             entity_id=entity_id,
-            action=AuditAction.UPDATE,
+            action=AuditAction.update,
             user=user,
             old_values=old_data,
             new_values=new_data,
@@ -259,7 +259,7 @@ class AuditLogger:
         return self.log_action(
             entity_type=entity_type,
             entity_id=entity_id,
-            action=AuditAction.SOFT_DELETE if soft_delete else AuditAction.DELETE,
+            action=AuditAction.soft_delete if soft_delete else AuditAction.delete,
             user=user,
             old_values=entity_data,
             description=f"{'Soft deleted' if soft_delete else 'Deleted'} {entity_type} #{entity_id}",
@@ -298,7 +298,7 @@ class AuditLogger:
         return self.log_action(
             entity_type=entity_type,
             entity_id=entity_id,
-            action=AuditAction.STATUS_CHANGE,
+            action=AuditAction.status_change,
             user=user,
             old_values={"status": old_status},
             new_values={"status": new_status},

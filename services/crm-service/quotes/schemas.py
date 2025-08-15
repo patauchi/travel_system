@@ -17,11 +17,11 @@ from core.enums import QuoteStatus, Currency, QuoteLineType
 class QuoteBase(BaseModel):
     """Base schema for Quote"""
     name: str = Field(..., max_length=200)
-    status: QuoteStatus = QuoteStatus.DRAFT
+    status: QuoteStatus = QuoteStatus.draft
     is_primary: bool = False
     quote_date: date
     expiration_date: date
-    currency: Currency = Currency.USD
+    currency: Currency = Currency.usd
     payment_terms: Optional[str] = Field(None, max_length=100)
     special_instructions: Optional[str] = None
     internal_notes: Optional[str] = None

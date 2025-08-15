@@ -12,18 +12,18 @@ from enum import Enum
 
 class ChannelType(str, Enum):
     """Types of communication channels"""
-    WHATSAPP = "whatsapp"
-    MESSENGER = "messenger"
-    INSTAGRAM = "instagram"
-    EMAIL = "email"
-    WEB = "web"
-    TWILIO_WHATSAPP = "twilio_whatsapp"
-    TWILIO_CALL = "twilio_call"
-    WHATSAPP_BUSINESS = "whatsapp_business"
-    FACEBOOK_MESSENGER = "facebook_messenger"
-    PERSONAL_WHATSAPP = "personal_whatsapp"
-    GMAIL = "gmail"
-    ZENDESK = "zendesk"
+    whatsapp = "whatsapp"
+    messenger = "messenger"
+    instagram = "instagram"
+    email = "email"
+    web = "web"
+    twilio_whatsapp = "twilio_whatsapp"
+    twilio_call = "twilio_call"
+    whatsapp_business = "whatsapp_business"
+    facebook_messenger = "facebook_messenger"
+    personal_whatsapp = "personal_whatsapp"
+    gmail = "gmail"
+    zendesk = "zendesk"
 
 
 # ============================================
@@ -32,43 +32,43 @@ class ChannelType(str, Enum):
 
 class ConversationStatus(str, Enum):
     """Status of inbox conversations"""
-    NEW = "new"
-    OPEN = "open"
-    REPLIED = "replied"
-    QUALIFIED = "qualified"
-    ARCHIVED = "archived"
+    new = "new"
+    open = "open"
+    replied = "replied"
+    qualified = "qualified"
+    archived = "archived"
 
 
 class Priority(str, Enum):
     """Priority levels for conversations"""
-    HIGH = "high"
-    NORMAL = "normal"
-    LOW = "low"
+    high = "high"
+    normal = "normal"
+    low = "low"
 
 
 class MessageDirection(str, Enum):
     """Direction of messages"""
-    IN = "in"
-    OUT = "out"
+    in_direction = "in"
+    out = "out"
 
 
 class MessageType(str, Enum):
     """Types of messages"""
-    TEXT = "text"
-    IMAGE = "image"
-    DOCUMENT = "document"
-    AUDIO = "audio"
-    VIDEO = "video"
-    LOCATION = "location"
+    text = "text"
+    image = "image"
+    document = "document"
+    audio = "audio"
+    video = "video"
+    location = "location"
 
 
 class MessageStatus(str, Enum):
     """Status of messages"""
-    PENDING = "pending"
-    SENT = "sent"
-    DELIVERED = "delivered"
-    READ = "read"
-    FAILED = "failed"
+    pending = "pending"
+    sent = "sent"
+    delivered = "delivered"
+    read = "read"
+    failed = "failed"
 
 
 # ============================================
@@ -77,38 +77,38 @@ class MessageStatus(str, Enum):
 
 class ChatChannelType(str, Enum):
     """Types of chat channels"""
-    PUBLIC = "public"
-    PRIVATE = "private"
-    DIRECT = "direct"
+    public = "public"
+    private = "private"
+    direct = "direct"
 
 
 class MemberRole(str, Enum):
     """Roles of channel members"""
-    ADMIN = "admin"
-    MODERATOR = "moderator"
-    MEMBER = "member"
+    admin = "admin"
+    moderator = "moderator"
+    member = "member"
 
 
 class NotificationLevel(str, Enum):
     """Notification levels for channel members"""
-    ALL = "all"
-    MENTIONS = "mentions"
-    NONE = "none"
+    all = "all"
+    mentions = "mentions"
+    none = "none"
 
 
 class EntryType(str, Enum):
     """Types of chat entries"""
-    MESSAGE = "message"
-    JOIN = "join"
-    LEAVE = "leave"
-    SYSTEM = "system"
+    message = "message"
+    join = "join"
+    leave = "leave"
+    system = "system"
 
 
 class MentionType(str, Enum):
     """Types of mentions"""
-    USER = "user"
-    EVERYONE = "everyone"
-    HERE = "here"
+    user = "user"
+    everyone = "everyone"
+    here = "here"
 
 
 # ============================================
@@ -117,36 +117,36 @@ class MentionType(str, Enum):
 
 class CommunicationType(str, Enum):
     """Types of communication"""
-    EMAIL = "email"
-    SMS = "sms"
-    WHATSAPP = "whatsapp"
-    PUSH = "push"
-    IN_APP = "in_app"
+    email = "email"
+    sms = "sms"
+    whatsapp = "whatsapp"
+    push = "push"
+    in_app = "in_app"
 
 
 class CommunicationStatus(str, Enum):
     """Status of communication attempts"""
-    PENDING = "pending"
-    SENDING = "sending"
-    SENT = "sent"
-    DELIVERED = "delivered"
-    READ = "read"
-    FAILED = "failed"
-    BOUNCED = "bounced"
-    COMPLAINED = "complained"
+    pending = "pending"
+    sending = "sending"
+    sent = "sent"
+    delivered = "delivered"
+    read = "read"
+    failed = "failed"
+    bounced = "bounced"
+    complained = "complained"
 
 
 class TemplateType(str, Enum):
     """Types of communication templates"""
-    WELCOME = "welcome"
-    VERIFICATION = "verification"
-    RESET_PASSWORD = "reset_password"
-    BOOKING_CONFIRMATION = "booking_confirmation"
-    BOOKING_REMINDER = "booking_reminder"
-    PAYMENT_RECEIPT = "payment_receipt"
-    PROMOTIONAL = "promotional"
-    TRANSACTIONAL = "transactional"
-    NOTIFICATION = "notification"
+    welcome = "welcome"
+    verification = "verification"
+    reset_password = "reset_password"
+    booking_confirmation = "booking_confirmation"
+    booking_reminder = "booking_reminder"
+    payment_receipt = "payment_receipt"
+    promotional = "promotional"
+    transactional = "transactional"
+    notification = "notification"
 
 
 # ============================================
@@ -155,19 +155,19 @@ class TemplateType(str, Enum):
 
 class WebhookEvent(str, Enum):
     """Types of webhook events"""
-    MESSAGE_RECEIVED = "message_received"
-    MESSAGE_SENT = "message_sent"
-    MESSAGE_DELIVERED = "message_delivered"
-    MESSAGE_READ = "message_read"
-    MESSAGE_FAILED = "message_failed"
-    CONVERSATION_CREATED = "conversation_created"
-    CONVERSATION_UPDATED = "conversation_updated"
-    CONVERSATION_ARCHIVED = "conversation_archived"
-    CHANNEL_CREATED = "channel_created"
-    CHANNEL_UPDATED = "channel_updated"
-    CHANNEL_DELETED = "channel_deleted"
-    MEMBER_JOINED = "member_joined"
-    MEMBER_LEFT = "member_left"
-    ENTRY_CREATED = "entry_created"
-    ENTRY_EDITED = "entry_edited"
-    ENTRY_DELETED = "entry_deleted"
+    message_received = "message_received"
+    message_sent = "message_sent"
+    message_delivered = "message_delivered"
+    message_read = "message_read"
+    message_failed = "message_failed"
+    conversation_created = "conversation_created"
+    conversation_updated = "conversation_updated"
+    conversation_archived = "conversation_archived"
+    channel_created = "channel_created"
+    channel_updated = "channel_updated"
+    channel_deleted = "channel_deleted"
+    member_joined = "member_joined"
+    member_left = "member_left"
+    entry_created = "entry_created"
+    entry_edited = "entry_edited"
+    entry_deleted = "entry_deleted"

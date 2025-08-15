@@ -24,7 +24,7 @@ class RateBase(BaseModel):
     pricing_model: PricingModel = Field(..., description="Pricing model")
     valid_from: date = Field(..., description="Valid from date")
     valid_to: date = Field(..., description="Valid to date")
-    season_type: SeasonType = Field(SeasonType.LOW, description="Season type")
+    season_type: SeasonType = Field(SeasonType.low, description="Season type")
     applicable_days: Optional[List[int]] = Field(None, description="Applicable days of week (1-7)")
     blocked_dates: Optional[List[str]] = Field(None, description="Blocked dates (ISO format)")
     currency: str = Field("USD", min_length=3, max_length=3, description="Currency code")
@@ -136,7 +136,7 @@ class RatePassengerPriceBase(BaseModel):
     """Base schema for Rate Passenger Price"""
     rate_id: int = Field(..., description="Rate ID")
     variant_id: Optional[int] = Field(None, description="Variant ID")
-    passenger_category: PassengerType = Field(PassengerType.ADULT, description="Passenger category")
+    passenger_category: PassengerType = Field(PassengerType.adult, description="Passenger category")
     nationality_type: str = Field("all", description="Nationality type")
     price: Optional[Decimal] = Field(None, ge=0, description="Absolute price")
     discount_percentage: Optional[Decimal] = Field(None, ge=0, le=100, description="Discount percentage")

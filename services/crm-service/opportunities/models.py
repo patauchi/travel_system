@@ -33,7 +33,7 @@ class Opportunity(Base):
     campaign_id = Column(Integer, nullable=True)  # References campaigns if exists
 
     # Opportunity information
-    stage = Column(SQLEnum(OpportunityStage), default=OpportunityStage.PROSPECTING, index=True)
+    stage = Column(SQLEnum(OpportunityStage), default=OpportunityStage.prospecting, index=True)
     probability = Column(Integer, default=25)  # 0-100%
     amount = Column(Numeric(15, 2), nullable=True)
     expected_close_date = Column(Date, nullable=True)

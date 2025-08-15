@@ -46,7 +46,7 @@ async def create_account(
 
         # Create actor first
         actor_data = {
-            "type": ActorType.ACCOUNT_BUSINESS if account_data.account_type == "business" else ActorType.ACCOUNT_PERSON,
+            "type": ActorType.account_business if account_data.account_type == "business" else ActorType.account_person,
             "first_name": account_data.first_name,
             "last_name": account_data.last_name,
             "company_name": account_data.company_name,
@@ -411,11 +411,11 @@ async def get_account_stats(
         # Basic counts
         total_accounts = tenant_db.query(Account).filter(Account.deleted_at.is_(None)).count()
         active_accounts = tenant_db.query(Account).filter(
-            Account.account_status == AccountStatus.ACTIVE,
+            Account.account_status == AccountStatus.active,
             Account.deleted_at.is_(None)
         ).count()
         customer_accounts = tenant_db.query(Account).filter(
-            Account.account_status == AccountStatus.CUSTOMER,
+            Account.account_status == AccountStatus.customer,
             Account.deleted_at.is_(None)
         ).count()
 
