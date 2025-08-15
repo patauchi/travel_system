@@ -25,33 +25,44 @@ Base = declarative_base()
 class Note(Base):
     """Notes and documentation system - Based on Laravel migration"""
     __tablename__ = "notes"
-    __table_args__ = {'extend_existing': True}
 
     id = Column(BigInteger, primary_key=True, autoincrement=True)
-    title = Column(String(191), nullable=True)  # Límite para índices
+    title = Column(String(191), nullable=True)
     content = Column(Text, nullable=False)
     notable_id = Column(BigInteger, nullable=False)
-    notable_type = Column(String(50), nullable=False)  # Polimórfico
-    priority = Column(SQLEnum(NotePriority), default=NotePriority.MEDIUM)
-    assigned_to = Column(UUID(as_uuid=True), ForeignKey('users.id'), nullable=True)
-    created_by = Column(UUID(as_uuid=True), ForeignKey('users.id'), nullable=False)
+    notable_type = Column(String(50), nullable=False)
+    priority = Column(SQLEnum(NotePriority, values_callable=lambda x: [e.value for e in x]),
+                     default=NotePriority.MEDIUM)
+    assigned_to = Column(UUID(as_uuid=True), nullable=True)
+    created_by = Column(UUID(as_uuid=True), nullable=False)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    # Índices definidos en la tabla
     __table_args__ = (
         # Índices para performance
-        UniqueConstraint('notable_type', 'notable_id', name='idx_notes_notable'),
-        UniqueConstraint('assigned_to', 'created_at', name='idx_notes_assigned_created'),
-        UniqueConstraint('priority', 'created_at', name='idx_notes_priority_created'),
-        UniqueConstraint('created_at', name='idx_notes_created_at'),
+        Index('idx_notes_notable', 'notable_type', 'notable_id'),
+        Index('idx_notes_assigned_created', 'assigned_to', 'created_at'),
+        Index('idx_notes_priority_created', 'priority', 'created_at'),
+        Index('idx_notes_created_at', 'created_at'),
         # Índice compuesto para consultas complejas
-        UniqueConstraint('notable_type', 'notable_id', 'priority', 'created_at',
-                        name='notes_complex_query'),
+        Index('idx_notes_complex_query', 'notable_type', 'notable_id', 'priority', 'created_at'),
+        {'extend_existing': True}
     )
 
+    # Método para obtener el user sin FK
+    def get_assigned_user(self):
+        """Obtener usuario asignado de forma segura"""
+        if not self.assigned_to:
+            return None
+        # Implementar lógica para obtener user desde el contexto correcto
+        return get_user_by_id(self.assigned_to)
+
+    def get_creator(self):
+        """Obtener usuario creador"""
+        return get_user_by_id(self.created_by)
+
     def __repr__(self):
-        return f"<Note {self.id}: {self.title or 'Untitled'}>"
+        return f"<Note {self.id}>"
 
     def to_dict(self):
         return {
@@ -68,6 +79,7 @@ class Note(Base):
         }
 
 
+
 class LogCall(Base):
     """Call logging system - Based on Laravel migration"""
     __tablename__ = "log_calls"
@@ -75,12 +87,12 @@ class LogCall(Base):
 
     id = Column(BigInteger, primary_key=True, autoincrement=True)
     phone_number = Column(String(255), nullable=False)
-    call_type = Column(SQLEnum(CallType), nullable=False)
-    status = Column(SQLEnum(CallStatus), nullable=False)
+    call_type = Column(SQLEnum(CallType, values_callable=lambda x: [e.value for e in x]), nullable=False)
+    status = Column(SQLEnum(CallStatus, values_callable=lambda x: [e.value for e in x]), nullable=False)
     notes = Column(Text, nullable=True)
     logacallable_id = Column(BigInteger, nullable=True)  # ID del modelo relacionado
     logacallable_type = Column(String(255), nullable=True)  # Tipo del modelo (Lead, Contact, etc.)
-    user_id = Column(UUID(as_uuid=True), ForeignKey('users.id'), nullable=True)  # Usuario que hizo/recibió la llamada
+    created_by = Column(UUID(as_uuid=True), nullable=True)  # Usuario que registró la llamada - no FK constraint
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
     deleted_at = Column(DateTime(timezone=True), nullable=True)  # Para soft deletes
@@ -89,11 +101,11 @@ class LogCall(Base):
     __table_args__ = (
         Index('idx_logcalls_logcallable', 'logacallable_type', 'logacallable_id'),
         Index('idx_logcalls_phone_number', 'phone_number'),
-        Index('idx_logcalls_user_id', 'user_id'),
+        Index('idx_logcalls_created_by', 'created_by'),
     )
 
     def __repr__(self):
-        return f"<LogCall {self.id}: {self.call_type.value} to {self.phone_number}>"
+        return f"<LogCall {self.id}>"
 
     def to_dict(self):
         return {
@@ -104,7 +116,7 @@ class LogCall(Base):
             "notes": self.notes,
             "logacallable_id": self.logacallable_id,
             "logacallable_type": self.logacallable_type,
-            "user_id": str(self.user_id) if self.user_id else None,
+            "created_by": str(self.created_by) if self.created_by else None,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None
         }
@@ -118,14 +130,14 @@ class Task(Base):
     id = Column(BigInteger, primary_key=True, autoincrement=True)
     title = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)
-    status = Column(SQLEnum(TaskStatus), default=TaskStatus.PENDING)
-    priority = Column(SQLEnum(TaskPriority), default=TaskPriority.LOW)
+    status = Column(SQLEnum(TaskStatus, values_callable=lambda x: [e.value for e in x]), default=TaskStatus.PENDING)
+    priority = Column(SQLEnum(TaskPriority, values_callable=lambda x: [e.value for e in x]), default=TaskPriority.LOW)
     due_date = Column(Date, nullable=True)
     completed_at = Column(Date, nullable=True)
     taskable_id = Column(BigInteger, nullable=True)  # ID del modelo relacionado
     taskable_type = Column(String(255), nullable=True)  # Tipo del modelo (Lead, Contact, etc.)
-    assigned_to = Column(UUID(as_uuid=True), ForeignKey('users.id'), nullable=True)  # Usuario asignado
-    created_by = Column(UUID(as_uuid=True), ForeignKey('users.id'), nullable=True)  # Usuario que creó la tarea
+    assigned_to = Column(UUID(as_uuid=True), nullable=True)  # Usuario asignado - no FK constraint
+    created_by = Column(UUID(as_uuid=True), nullable=True)  # Usuario que creó la tarea - no FK constraint
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
     deleted_at = Column(DateTime(timezone=True), nullable=True)  # Para soft deletes
@@ -140,7 +152,7 @@ class Task(Base):
     )
 
     def __repr__(self):
-        return f"<Task {self.id}: {self.title}>"
+        return f"<Task {self.id}>"
 
     def to_dict(self):
         return {
@@ -169,11 +181,11 @@ class Attachment(Base):
     original_name = Column(String(255), nullable=False)  # Nombre original del archivo
     file_name = Column(String(255), nullable=False)  # Nombre del archivo en el servidor
     file_path = Column(String(500), nullable=False)  # Ruta completa del archivo
-    disk = Column(SQLEnum(DiskType), default=DiskType.PUBLIC)  # Disco de almacenamiento
+    disk = Column(SQLEnum(DiskType, values_callable=lambda x: [e.value for e in x]), default=DiskType.PUBLIC)  # Disco de almacenamiento
     description = Column(Text, nullable=True)  # Descripción del archivo
     attachable_id = Column(BigInteger, nullable=True)  # ID del modelo relacionado
     attachable_type = Column(String(255), nullable=True)  # Tipo del modelo (Lead, Quote, etc.)
-    uploaded_by = Column(UUID(as_uuid=True), ForeignKey('users.id'), nullable=True)  # Usuario que subió el archivo
+    uploaded_by = Column(UUID(as_uuid=True), nullable=False)  # Usuario que subió el archivo - no FK constraint
     is_public = Column(Boolean, default=False)  # Si el archivo es público
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -182,12 +194,12 @@ class Attachment(Base):
     # Índices
     __table_args__ = (
         UniqueConstraint('attachable_type', 'attachable_id', name='idx_attachments_attachable'),
-        UniqueConstraint('uploaded_by', name='idx_attachments_uploaded_by'),
-        UniqueConstraint('is_public', name='idx_attachments_is_public'),
+        Index('idx_attachments_uploaded_by', 'uploaded_by'),
+        Index('idx_attachments_is_public', 'is_public'),
     )
 
     def __repr__(self):
-        return f"<Attachment {self.id}: {self.original_name}>"
+        return f"<Attachment {self.id}>"
 
     def to_dict(self):
         return {
@@ -218,11 +230,11 @@ class Event(Base):
     end_date = Column(DateTime(timezone=True), nullable=True)
     all_day = Column(Boolean, default=False)
     location = Column(String(255), nullable=True)
-    status = Column(SQLEnum(EventStatus), default=EventStatus.SCHEDULED)
+    status = Column(SQLEnum(EventStatus, values_callable=lambda x: [e.value for e in x]), default=EventStatus.SCHEDULED)
     notes = Column(Text, nullable=True)
     eventable_id = Column(BigInteger, nullable=True)  # ID del modelo relacionado
     eventable_type = Column(String(255), nullable=True)  # Tipo del modelo (Lead, Contact, etc.)
-    organizer_id = Column(UUID(as_uuid=True), ForeignKey('users.id'), nullable=True)  # Usuario organizador
+    organizer_id = Column(UUID(as_uuid=True), nullable=True)  # Usuario organizador - no FK constraint
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
     deleted_at = Column(DateTime(timezone=True), nullable=True)  # Para soft deletes
@@ -236,7 +248,7 @@ class Event(Base):
     )
 
     def __repr__(self):
-        return f"<Event {self.id}: {self.title}>"
+        return f"<Event {self.id}>"
 
     def to_dict(self):
         return {
@@ -284,7 +296,7 @@ class CarbonFootprint(Base):
     )
 
     def __repr__(self):
-        return f"<CarbonFootprint {self.id}: Quote {self.quote_id}>"
+        return f"<CarbonFootprint {self.id}>"
 
     def to_dict(self):
         return {
@@ -308,7 +320,7 @@ class ChannelConfig(Base):
 
     # Channel Configuration
     name = Column(String(255), nullable=False, comment='Integration name (e.g., "Main WhatsApp", "Support Email")')
-    channel = Column(SQLEnum(ChannelType), nullable=False)
+    channel = Column(SQLEnum(ChannelType, values_callable=lambda x: [e.value for e in x]), nullable=False)
     is_active = Column(Boolean, default=True)
 
     # Configuration JSON for flexibility
@@ -320,8 +332,8 @@ class ChannelConfig(Base):
     business_hours = Column(JSONB, nullable=True, comment='Operating hours per day {"mon": {"start": "09:00", "end": "18:00"}}')
 
     # Assignment Configuration
-    assignment_rule = Column(SQLEnum(AssignmentRule), default=AssignmentRule.MANUAL)
-    default_assignee = Column(UUID(as_uuid=True), ForeignKey('users.id', ondelete='SET NULL'), nullable=True)
+    assignment_rule = Column(SQLEnum(AssignmentRule, values_callable=lambda x: [e.value for e in x]), default=AssignmentRule.MANUAL)
+    default_assignee = Column(UUID(as_uuid=True), nullable=True)  # Reference to users without FK constraint
 
     # Timestamps
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
@@ -336,7 +348,7 @@ class ChannelConfig(Base):
     )
 
     def __repr__(self):
-        return f"<ChannelConfig {self.id}: {self.name}>"
+        return f"<ChannelConfig {self.id}>"
 
     def to_dict(self):
         return {
@@ -365,7 +377,7 @@ class Review(Base):
     title = Column(String(255), nullable=True)
     content = Column(Text, nullable=True)
     rating = Column(Integer, nullable=True)  # 1-5 star rating
-    reviewer_id = Column(UUID(as_uuid=True), ForeignKey('users.id'), nullable=True)
+    reviewer_id = Column(UUID(as_uuid=True), nullable=True)  # Reference to users without FK constraint
     reviewable_id = Column(BigInteger, nullable=True)  # ID del modelo relacionado
     reviewable_type = Column(String(255), nullable=True)  # Tipo del modelo
     is_approved = Column(Boolean, default=False)
@@ -373,7 +385,7 @@ class Review(Base):
     updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
 
     def __repr__(self):
-        return f"<Review {self.id}: {self.rating or 'Unrated'}>"
+        return f"<Review {self.id}>"
 
     def to_dict(self):
         return {

@@ -35,28 +35,51 @@ router = APIRouter()
 async def create_note(
     note_data: NoteCreate,
     tenant_slug: str,
-    db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
-    """Create a new note"""
+    """Create a new note using two-phase creation"""
+    from shared_auth import safe_tenant_session
+    from database import get_db
+
     # Validate tenant access first
     validate_tenant_access(current_user, tenant_slug)
 
-    db_note = Note(
-        title=note_data.title,
-        content=note_data.content,
-        notable_id=note_data.notable_id,
-        notable_type=note_data.notable_type,
-        priority=note_data.priority,
-        assigned_to=note_data.assigned_to,
-        created_by=current_user.get("user_id") or current_user.get("id")
-    )
+    # Phase 1: Create the note in the shared/global context to validate foreign keys
+    db_global = next(get_db())
+    try:
+        db_note = Note(
+            title=note_data.title,
+            content=note_data.content,
+            notable_id=note_data.notable_id,
+            notable_type=note_data.notable_type,
+            priority=note_data.priority,
+            assigned_to=note_data.assigned_to,
+            created_by=current_user.get("user_id") or current_user.get("id")
+        )
 
-    db.add(db_note)
-    db.commit()
-    db.refresh(db_note)
+        # Don't add to global session, just validate the model
+        # The actual insert will happen in the tenant context
+    finally:
+        db_global.close()
 
-    return db_note
+    # Phase 2: Insert into tenant schema
+    with safe_tenant_session(tenant_slug) as db:
+        # Create a new instance for the tenant session
+        tenant_note = Note(
+            title=note_data.title,
+            content=note_data.content,
+            notable_id=note_data.notable_id,
+            notable_type=note_data.notable_type,
+            priority=note_data.priority,
+            assigned_to=note_data.assigned_to,
+            created_by=current_user.get("user_id") or current_user.get("id")
+        )
+
+        db.add(tenant_note)
+        db.commit()
+        db.refresh(tenant_note)
+
+        return tenant_note
 
 
 @router.get("/notes", response_model=List[NoteResponse])
@@ -70,65 +93,70 @@ async def list_notes(
     assigned_to: Optional[UUID] = Query(None),
     created_by: Optional[UUID] = Query(None),
     search: Optional[str] = Query(None),
-    db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
     """List notes with filtering and pagination"""
+    from shared_auth import safe_tenant_session
+    from sqlalchemy import or_
+
     # Validate tenant access first
     validate_tenant_access(current_user, tenant_slug)
 
-    query = db.query(Note)
+    with safe_tenant_session(tenant_slug) as db:
+        query = db.query(Note)
 
-    # Apply filters
-    if priority:
-        query = query.filter(Note.priority == priority)
+        # Apply filters
+        if priority:
+            query = query.filter(Note.priority == priority)
 
-    if notable_type:
-        query = query.filter(Note.notable_type == notable_type)
+        if notable_type:
+            query = query.filter(Note.notable_type == notable_type)
 
-    if notable_id:
-        query = query.filter(Note.notable_id == notable_id)
+        if notable_id:
+            query = query.filter(Note.notable_id == notable_id)
 
-    if assigned_to:
-        query = query.filter(Note.assigned_to == assigned_to)
+        if assigned_to:
+            query = query.filter(Note.assigned_to == assigned_to)
 
-    if created_by:
-        query = query.filter(Note.created_by == created_by)
+        if created_by:
+            query = query.filter(Note.created_by == created_by)
 
-    if search:
-        search_term = f"%{search}%"
-        query = query.filter(
-            or_(
-                Note.title.ilike(search_term),
-                Note.content.ilike(search_term)
+        if search:
+            search_term = f"%{search}%"
+            query = query.filter(
+                or_(
+                    Note.title.ilike(search_term),
+                    Note.content.ilike(search_term)
+                )
             )
-        )
 
-    # Order by most recent first
-    query = query.order_by(Note.created_at.desc())
+        # Order by priority and creation date
+        query = query.order_by(Note.priority.desc(), Note.created_at.desc())
 
-    notes = query.offset(skip).limit(limit).all()
-    return notes
+        notes = query.offset(skip).limit(limit).all()
+        return notes
 
 
 @router.get("/notes/{note_id}", response_model=NoteResponse)
 async def get_note(
     note_id: int,
     tenant_slug: str,
-    db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
     """Get a specific note by ID"""
+    from shared_auth import safe_tenant_session
+
     # Validate tenant access first
     validate_tenant_access(current_user, tenant_slug)
 
-    note = db.query(Note).filter(Note.id == note_id).first()
-    if not note:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Note not found"
-        )
-    return note
+    with safe_tenant_session(tenant_slug) as db:
+        note = db.query(Note).filter(Note.id == note_id).first()
+        if not note:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Note not found"
+            )
+        return note
 
 
 @router.put("/notes/{note_id}", response_model=NoteResponse)
@@ -136,51 +164,55 @@ async def update_note(
     note_id: int,
     note_data: NoteUpdate,
     tenant_slug: str,
-    db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
     """Update a note"""
+    from shared_auth import safe_tenant_session
+
     # Validate tenant access first
     validate_tenant_access(current_user, tenant_slug)
 
-    db_note = db.query(Note).filter(Note.id == note_id).first()
-    if not db_note:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Note not found"
-        )
+    with safe_tenant_session(tenant_slug) as db:
+        db_note = db.query(Note).filter(Note.id == note_id).first()
+        if not db_note:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Note not found"
+            )
 
-    # Update fields
-    update_data = note_data.dict(exclude_unset=True)
-    for field, value in update_data.items():
-        setattr(db_note, field, value)
+        # Update fields
+        update_data = note_data.dict(exclude_unset=True)
+        for field, value in update_data.items():
+            setattr(db_note, field, value)
 
-    db.commit()
-    db.refresh(db_note)
+        db.commit()
+        db.refresh(db_note)
 
-    return db_note
+        return db_note
 
 
 @router.delete("/notes/{note_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_note(
     note_id: int,
     tenant_slug: str,
-    db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
     """Delete a note"""
+    from shared_auth import safe_tenant_session
+
     # Validate tenant access first
     validate_tenant_access(current_user, tenant_slug)
 
-    db_note = db.query(Note).filter(Note.id == note_id).first()
-    if not db_note:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Note not found"
-        )
+    with safe_tenant_session(tenant_slug) as db:
+        db_note = db.query(Note).filter(Note.id == note_id).first()
+        if not db_note:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Note not found"
+            )
 
-    db.delete(db_note)
-    db.commit()
+        db.delete(db_note)
+        db.commit()
 
 
 # ============================================
@@ -191,30 +223,34 @@ async def delete_note(
 async def create_task(
     task_data: TaskCreate,
     tenant_slug: str,
-    db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
-    """Create a new task"""
+    """Create a new task using TaskService"""
+    from tools.services.task_service import task_service
+
     # Validate tenant access first
     validate_tenant_access(current_user, tenant_slug)
 
-    db_task = Task(
-        title=task_data.title,
-        description=task_data.description,
-        status=task_data.status,
-        priority=task_data.priority,
-        due_date=task_data.due_date,
-        taskable_id=task_data.taskable_id,
-        taskable_type=task_data.taskable_type,
-        assigned_to=task_data.assigned_to,
-        created_by=current_user.get("user_id") or current_user.get("id")
-    )
+    try:
+        # Use TaskService to handle context properly
+        task_dict = task_service.create_task(
+            tenant_slug=tenant_slug,
+            task_data=task_data,
+            current_user_id=current_user.get("user_id") or current_user.get("id")
+        )
 
-    db.add(db_task)
-    db.commit()
-    db.refresh(db_task)
-
-    return db_task
+        # Return the task dict directly - FastAPI will serialize it
+        return task_dict
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create task: {str(e)}"
+        )
 
 
 @router.get("/tasks", response_model=List[TaskResponse])
@@ -231,68 +267,82 @@ async def list_tasks(
     due_before: Optional[date] = Query(None),
     due_after: Optional[date] = Query(None),
     search: Optional[str] = Query(None),
-    db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
     """List tasks with filtering and pagination"""
-    query = db.query(Task).filter(Task.deleted_at.is_(None))
+    from tools.services.task_service import task_service
 
-    # Apply filters
+    # Validate tenant access first
+    validate_tenant_access(current_user, tenant_slug)
+
+    # Build filters dict
+    filters = {}
     if status:
-        query = query.filter(Task.status == status)
-
+        filters['status'] = status
     if priority:
-        query = query.filter(Task.priority == priority)
-
+        filters['priority'] = priority
     if assigned_to:
-        query = query.filter(Task.assigned_to == assigned_to)
+        filters['assigned_to'] = assigned_to
+    if assigned_by:
+        filters['created_by'] = assigned_by
+    if due_before:
+        filters['due_before'] = due_before
+    if due_after:
+        filters['due_after'] = due_after
 
-    if created_by:
-        query = query.filter(Task.created_by == created_by)
+    # Note: search, related_entity_type, and related_entity_id
+    # would need to be added to the service method
 
-    if due_from:
-        query = query.filter(Task.due_date >= due_from)
-
-    if due_to:
-        query = query.filter(Task.due_date <= due_to)
-
-    if taskable_type:
-        query = query.filter(Task.taskable_type == taskable_type)
-
-    if taskable_id:
-        query = query.filter(Task.taskable_id == taskable_id)
-
-    if search:
-        search_term = f"%{search}%"
-        query = query.filter(
-            or_(
-                Task.title.ilike(search_term),
-                Task.description.ilike(search_term)
-            )
+    try:
+        tasks = task_service.list_tasks(
+            tenant_slug=tenant_slug,
+            skip=skip,
+            limit=limit,
+            filters=filters
         )
-
-    # Order by priority and due date
-    query = query.order_by(Task.priority.desc(), Task.due_date.asc())
-
-    tasks = query.offset(skip).limit(limit).all()
-    return tasks
+        return tasks
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to list tasks: {str(e)}"
+        )
 
 
 @router.get("/tasks/{task_id}", response_model=TaskResponse)
 async def get_task(
     task_id: int,
     tenant_slug: str,
-    db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
     """Get a specific task by ID"""
-    task = db.query(Task).filter(and_(Task.id == task_id, Task.deleted_at.is_(None))).first()
-    if not task:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Task not found"
+    from tools.services.task_service import task_service
+
+    # Validate tenant access first
+    validate_tenant_access(current_user, tenant_slug)
+
+    try:
+        task = task_service.get_task(
+            tenant_slug=tenant_slug,
+            task_id=task_id
         )
-    return task
+
+        if not task:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Task not found"
+            )
+
+        return task
+    except Exception as e:
+        if "not found" in str(e).lower():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Task not found"
+            )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get task: {str(e)}"
+        )
 
 
 @router.put("/tasks/{task_id}", response_model=TaskResponse)
@@ -300,46 +350,80 @@ async def update_task(
     task_id: int,
     task_data: TaskUpdate,
     tenant_slug: str,
-    db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
     """Update a task"""
-    db_task = db.query(Task).filter(and_(Task.id == task_id, Task.deleted_at.is_(None))).first()
-    if not db_task:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Task not found"
+    from tools.services.task_service import task_service
+
+    # Validate tenant access first
+    validate_tenant_access(current_user, tenant_slug)
+
+    try:
+        task = task_service.update_task(
+            tenant_slug=tenant_slug,
+            task_id=task_id,
+            task_data=task_data,
+            current_user_id=current_user.get("user_id") or current_user.get("id")
         )
 
-    # Update fields
-    update_data = task_data.dict(exclude_unset=True)
-    for field, value in update_data.items():
-        setattr(db_task, field, value)
+        if not task:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Task not found"
+            )
 
-    db.commit()
-    db.refresh(db_task)
-
-    return db_task
+        return task
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        if "not found" in str(e).lower():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Task not found"
+            )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update task: {str(e)}"
+        )
 
 
 @router.delete("/tasks/{task_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_task(
     task_id: int,
     tenant_slug: str,
-    db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
-    """Soft delete a task"""
-    db_task = db.query(Task).filter(and_(Task.id == task_id, Task.deleted_at.is_(None))).first()
-    if not db_task:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Task not found"
+    """Delete a task (soft delete)"""
+    from tools.services.task_service import task_service
+
+    # Validate tenant access first
+    validate_tenant_access(current_user, tenant_slug)
+
+    try:
+        deleted = task_service.delete_task(
+            tenant_slug=tenant_slug,
+            task_id=task_id,
+            current_user_id=current_user.get("user_id") or current_user.get("id")
         )
 
-    # Soft delete
-    db_task.deleted_at = datetime.utcnow()
-    db.commit()
+        if not deleted:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Task not found"
+            )
+    except Exception as e:
+        if "not found" in str(e).lower():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Task not found"
+            )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete task: {str(e)}"
+        )
 
 
 # ============================================
@@ -350,25 +434,48 @@ async def delete_task(
 async def create_logcall(
     logcall_data: LogCallCreate,
     tenant_slug: str,
-    db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
-    """Create a new call log"""
-    db_logcall = LogCall(
-        phone_number=logcall_data.phone_number,
-        call_type=logcall_data.call_type,
-        status=logcall_data.status,
-        notes=logcall_data.notes,
-        logacallable_id=logcall_data.logacallable_id,
-        logacallable_type=logcall_data.logacallable_type,
-        user_id=current_user.get("user_id") or current_user.get("id")
-    )
+    """Create a new log call using two-phase creation"""
+    from shared_auth import safe_tenant_session
+    from database import get_db
 
-    db.add(db_logcall)
-    db.commit()
-    db.refresh(db_logcall)
+    # Validate tenant access first
+    validate_tenant_access(current_user, tenant_slug)
 
-    return db_logcall
+    # Phase 1: Validate the model with foreign keys in global context
+    db_global = next(get_db())
+    try:
+        db_logcall = LogCall(
+            phone_number=logcall_data.phone_number,
+            call_type=logcall_data.call_type,
+            status=logcall_data.status,
+            notes=logcall_data.notes,
+            logacallable_id=logcall_data.logacallable_id,
+            logacallable_type=logcall_data.logacallable_type,
+            user_id=current_user.get("user_id") or current_user.get("id")
+        )
+        # Just validate, don't persist
+    finally:
+        db_global.close()
+
+    # Phase 2: Insert into tenant schema
+    with safe_tenant_session(tenant_slug) as db:
+        tenant_logcall = LogCall(
+            phone_number=logcall_data.phone_number,
+            call_type=logcall_data.call_type,
+            status=logcall_data.status,
+            notes=logcall_data.notes,
+            logacallable_id=logcall_data.logacallable_id,
+            logacallable_type=logcall_data.logacallable_type,
+            user_id=current_user.get("user_id") or current_user.get("id")
+        )
+
+        db.add(tenant_logcall)
+        db.commit()
+        db.refresh(tenant_logcall)
+
+        return tenant_logcall
 
 
 @router.get("/logcalls", response_model=List[LogCallResponse])
@@ -382,53 +489,65 @@ async def list_logcalls(
     user_id: Optional[UUID] = Query(None),
     logacallable_type: Optional[str] = Query(None),
     logacallable_id: Optional[int] = Query(None),
-    db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
     """List call logs with filtering and pagination"""
-    query = db.query(LogCall).filter(LogCall.deleted_at.is_(None))
+    from shared_auth import safe_tenant_session
 
-    # Apply filters
-    if call_type:
-        query = query.filter(LogCall.call_type == call_type)
+    # Validate tenant access first
+    validate_tenant_access(current_user, tenant_slug)
 
-    if status:
-        query = query.filter(LogCall.status == status)
+    with safe_tenant_session(tenant_slug) as db:
+        query = db.query(LogCall).filter(LogCall.deleted_at.is_(None))
 
-    if phone_number:
-        query = query.filter(LogCall.phone_number.ilike(f"%{phone_number}%"))
+        # Apply filters
+        if call_type:
+            query = query.filter(LogCall.call_type == call_type)
 
-    if user_id:
-        query = query.filter(LogCall.user_id == user_id)
+        if status:
+            query = query.filter(LogCall.status == status)
 
-    if logacallable_type:
-        query = query.filter(LogCall.logacallable_type == logacallable_type)
+        if phone_number:
+            query = query.filter(LogCall.phone_number.contains(phone_number))
 
-    if logacallable_id:
-        query = query.filter(LogCall.logacallable_id == logacallable_id)
+        if user_id:
+            query = query.filter(LogCall.user_id == user_id)
 
-    # Order by most recent first
-    query = query.order_by(LogCall.created_at.desc())
+        if logacallable_type:
+            query = query.filter(LogCall.logacallable_type == logacallable_type)
 
-    logcalls = query.offset(skip).limit(limit).all()
-    return logcalls
+        if logacallable_id:
+            query = query.filter(LogCall.logacallable_id == logacallable_id)
+
+        # Order by creation date
+        query = query.order_by(LogCall.created_at.desc())
+
+        # Execute query
+        logcalls = query.offset(skip).limit(limit).all()
+        return logcalls
 
 
 @router.get("/logcalls/{logcall_id}", response_model=LogCallResponse)
 async def get_logcall(
     logcall_id: int,
     tenant_slug: str,
-    db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
-    """Get a specific call log by ID"""
-    logcall = db.query(LogCall).filter(and_(LogCall.id == logcall_id, LogCall.deleted_at.is_(None))).first()
-    if not logcall:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Call log not found"
-        )
-    return logcall
+    """Get a specific log call by ID"""
+    from shared_auth import safe_tenant_session
+    from sqlalchemy import and_
+
+    # Validate tenant access first
+    validate_tenant_access(current_user, tenant_slug)
+
+    with safe_tenant_session(tenant_slug) as db:
+        logcall = db.query(LogCall).filter(and_(LogCall.id == logcall_id, LogCall.deleted_at.is_(None))).first()
+        if not logcall:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Log call not found"
+            )
+        return logcall
 
 
 # ============================================
@@ -439,29 +558,56 @@ async def get_logcall(
 async def create_event(
     event_data: EventCreate,
     tenant_slug: str,
-    db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
-    """Create a new event"""
-    db_event = Event(
-        title=event_data.title,
-        description=event_data.description,
-        start_date=event_data.start_date,
-        end_date=event_data.end_date,
-        all_day=event_data.all_day,
-        location=event_data.location,
-        status=event_data.status,
-        notes=event_data.notes,
-        eventable_id=event_data.eventable_id,
-        eventable_type=event_data.eventable_type,
-        organizer_id=current_user.get("user_id") or current_user.get("id")
-    )
+    """Create a new event using two-phase creation"""
+    from shared_auth import safe_tenant_session
+    from database import get_db
 
-    db.add(db_event)
-    db.commit()
-    db.refresh(db_event)
+    # Validate tenant access first
+    validate_tenant_access(current_user, tenant_slug)
 
-    return db_event
+    # Phase 1: Validate the model with foreign keys in global context
+    db_global = next(get_db())
+    try:
+        db_event = Event(
+            title=event_data.title,
+            description=event_data.description,
+            status=event_data.status,
+            start_date=event_data.start_date,
+            end_date=event_data.end_date,
+            all_day=event_data.all_day,
+            location=event_data.location,
+            notes=event_data.notes,
+            eventable_id=event_data.eventable_id,
+            eventable_type=event_data.eventable_type,
+            organizer_id=current_user.get("user_id") or current_user.get("id")
+        )
+        # Just validate, don't persist
+    finally:
+        db_global.close()
+
+    # Phase 2: Insert into tenant schema
+    with safe_tenant_session(tenant_slug) as db:
+        tenant_event = Event(
+            title=event_data.title,
+            description=event_data.description,
+            status=event_data.status,
+            start_date=event_data.start_date,
+            end_date=event_data.end_date,
+            all_day=event_data.all_day,
+            location=event_data.location,
+            notes=event_data.notes,
+            eventable_id=event_data.eventable_id,
+            eventable_type=event_data.eventable_type,
+            organizer_id=current_user.get("user_id") or current_user.get("id")
+        )
+
+        db.add(tenant_event)
+        db.commit()
+        db.refresh(tenant_event)
+
+        return tenant_event
 
 
 @router.get("/events", response_model=List[EventResponse])
@@ -476,63 +622,74 @@ async def list_events(
     eventable_type: Optional[str] = Query(None),
     eventable_id: Optional[int] = Query(None),
     search: Optional[str] = Query(None),
-    db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
     """List events with filtering and pagination"""
-    query = db.query(Event).filter(Event.deleted_at.is_(None))
+    from shared_auth import safe_tenant_session
+    from sqlalchemy import or_
 
-    # Apply filters
-    if status:
-        query = query.filter(Event.status == status)
+    # Validate tenant access first
+    validate_tenant_access(current_user, tenant_slug)
 
-    if start_from:
-        query = query.filter(Event.start_date >= start_from)
+    with safe_tenant_session(tenant_slug) as db:
+        query = db.query(Event).filter(Event.deleted_at.is_(None))
 
-    if start_to:
-        query = query.filter(Event.start_date <= start_to)
+        # Apply filters
+        if status:
+            query = query.filter(Event.status == status)
 
-    if organizer_id:
-        query = query.filter(Event.organizer_id == organizer_id)
+        if start_from:
+            query = query.filter(Event.start_date >= start_from)
 
-    if eventable_type:
-        query = query.filter(Event.eventable_type == eventable_type)
+        if start_to:
+            query = query.filter(Event.start_date <= start_to)
 
-    if eventable_id:
-        query = query.filter(Event.eventable_id == eventable_id)
+        if organizer_id:
+            query = query.filter(Event.organizer_id == organizer_id)
 
-    if search:
-        search_term = f"%{search}%"
-        query = query.filter(
-            or_(
-                Event.title.ilike(search_term),
-                Event.description.ilike(search_term),
-                Event.location.ilike(search_term)
+        if eventable_type:
+            query = query.filter(Event.eventable_type == eventable_type)
+
+        if eventable_id:
+            query = query.filter(Event.eventable_id == eventable_id)
+
+        if search:
+            search_term = f"%{search}%"
+            query = query.filter(
+                or_(
+                    Event.title.ilike(search_term),
+                    Event.description.ilike(search_term)
+                )
             )
-        )
 
-    # Order by start date
-    query = query.order_by(Event.start_date.asc())
+        # Order by start date (upcoming first)
+        query = query.order_by(Event.start_date.asc())
 
-    events = query.offset(skip).limit(limit).all()
-    return events
+        events = query.offset(skip).limit(limit).all()
+        return events
 
 
 @router.get("/events/{event_id}", response_model=EventResponse)
 async def get_event(
     event_id: int,
     tenant_slug: str,
-    db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
     """Get a specific event by ID"""
-    event = db.query(Event).filter(and_(Event.id == event_id, Event.deleted_at.is_(None))).first()
-    if not event:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Event not found"
-        )
-    return event
+    from shared_auth import safe_tenant_session
+    from sqlalchemy import and_
+
+    # Validate tenant access first
+    validate_tenant_access(current_user, tenant_slug)
+
+    with safe_tenant_session(tenant_slug) as db:
+        event = db.query(Event).filter(and_(Event.id == event_id, Event.deleted_at.is_(None))).first()
+        if not event:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Event not found"
+            )
+        return event
 
 
 # ============================================

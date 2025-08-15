@@ -135,6 +135,28 @@ async def list_settings(
     return settings
 
 
+@router.get("/category/{category}", response_model=List[SettingResponse])
+async def get_settings_by_category(
+    category: str,
+    tenant_slug: str,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """Get all settings for a specific category"""
+    # Validate tenant access first
+    validate_tenant_access(current_user, tenant_slug)
+
+    settings = db.query(Setting).filter(Setting.category == category).all()
+
+    if not settings:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No settings found for category: {category}"
+        )
+
+    return settings
+
+
 @router.get("/{setting_id}", response_model=SettingResponse)
 async def get_setting(
     setting_id: UUID,
@@ -355,7 +377,7 @@ async def export_configuration(
 
     return ConfigurationExport(
         exported_at=datetime.utcnow(),
-        tenant_id=tenant_id,
+        tenant_id=current_user.get("tenant_id"),
         categories=[category],
         settings=[SettingResponse.from_orm(setting) for setting in settings]
     )
@@ -371,11 +393,12 @@ async def list_audit_logs(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
     action: Optional[str] = Query(None),
-    entity_type: Optional[str] = Query(None),
-    entity_id: Optional[UUID] = Query(None),
+    resource_type: Optional[str] = Query(None),
+    resource_id: Optional[str] = Query(None),
     user_id: Optional[UUID] = Query(None),
-    start_date: Optional[datetime] = Query(None),
-    end_date: Optional[datetime] = Query(None),
+    result: Optional[str] = Query(None),
+    date_from: Optional[datetime] = Query(None),
+    date_to: Optional[datetime] = Query(None),
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):

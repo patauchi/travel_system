@@ -1,7 +1,6 @@
 """
-System Service - Main Application
-Provides user management, settings, and administrative tools
-Following modular architecture pattern
+System Service Main Application
+FastAPI application for handling user management, settings, and administrative tools
 """
 
 from fastapi import FastAPI, HTTPException, Depends, status, Request
@@ -19,8 +18,7 @@ import bcrypt
 import jwt
 from uuid import uuid4
 
-# Local imports
-from database import engine, get_db, SessionLocal, verify_connection
+# Import shared authentication
 from shared_auth import (
     get_current_user,
     require_super_admin,
@@ -31,11 +29,23 @@ from shared_auth import (
     validate_tenant_access
 )
 
+# Import database
+from database import engine, get_db, SessionLocal, verify_connection
 
-
-# Module imports
-from users.endpoints import router as users_router
-from settings.endpoints import router as settings_router
+# Import routers from modules
+from users.endpoints import (
+    router as users_router,
+    create_role,
+    list_roles,
+    get_role,
+    create_team,
+    list_teams
+)
+from settings.endpoints import (
+    router as settings_router,
+    list_audit_logs,
+    get_audit_log
+)
 from tools.endpoints import router as tools_router
 
 # Import models to register them with their respective Base
@@ -289,13 +299,24 @@ async def initialize_tenant_schema(
             from sqlalchemy import MetaData
             tenant_metadata = MetaData(schema=schema_name)
 
-            # Reflect the Base metadata from all modules to the tenant metadata with the correct schema
-            for base in [UsersBase, SettingsBase, ToolsBase]:
-                for table in base.metadata.tables.values():
-                    table.to_metadata(tenant_metadata)
+            # Create tables in correct order to respect foreign key dependencies
+            # 1. First create Users module tables (no dependencies)
+            users_metadata = MetaData(schema=schema_name)
+            for table in UsersBase.metadata.tables.values():
+                table.to_metadata(users_metadata)
+            users_metadata.create_all(conn)
 
-            # Create all tables in the tenant schema
-            tenant_metadata.create_all(conn)
+            # 2. Then create Settings module tables (may depend on users)
+            settings_metadata = MetaData(schema=schema_name)
+            for table in SettingsBase.metadata.tables.values():
+                table.to_metadata(settings_metadata)
+            settings_metadata.create_all(conn)
+
+            # 3. Finally create Tools module tables (depends on users)
+            tools_metadata = MetaData(schema=schema_name)
+            for table in ToolsBase.metadata.tables.values():
+                table.to_metadata(tools_metadata)
+            tools_metadata.create_all(conn)
 
         # Create default roles and admin user
         from users.models import User, Role, Permission
@@ -735,21 +756,56 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
 # Register Module Routers
 # ============================================================================
 
-# Users module
+# Users module - all user management endpoints
 app.include_router(
     users_router,
     prefix="/api/v1/tenants/{tenant_slug}/users",
     tags=["Users"]
 )
 
-# Settings module
+# Roles endpoints - accessible directly at /roles (from users module)
+from fastapi import APIRouter
+roles_router = APIRouter()
+roles_router.add_api_route("/", endpoint=create_role, methods=["POST"], status_code=status.HTTP_201_CREATED)
+roles_router.add_api_route("/", endpoint=list_roles, methods=["GET"])
+roles_router.add_api_route("/{role_id}", endpoint=get_role, methods=["GET"])
+
+app.include_router(
+    roles_router,
+    prefix="/api/v1/tenants/{tenant_slug}/roles",
+    tags=["Roles"]
+)
+
+# Teams endpoints - accessible directly at /teams (from users module)
+teams_router = APIRouter()
+teams_router.add_api_route("/", endpoint=create_team, methods=["POST"], status_code=status.HTTP_201_CREATED)
+teams_router.add_api_route("/", endpoint=list_teams, methods=["GET"])
+
+app.include_router(
+    teams_router,
+    prefix="/api/v1/tenants/{tenant_slug}/teams",
+    tags=["Teams"]
+)
+
+# Settings module - all settings management endpoints
 app.include_router(
     settings_router,
     prefix="/api/v1/tenants/{tenant_slug}/settings",
     tags=["Settings"]
 )
 
-# Tools module
+# Audit logs endpoints - accessible directly at /audit-logs (from settings module)
+audit_logs_router = APIRouter()
+audit_logs_router.add_api_route("/", endpoint=list_audit_logs, methods=["GET"])
+audit_logs_router.add_api_route("/{log_id}", endpoint=get_audit_log, methods=["GET"])
+
+app.include_router(
+    audit_logs_router,
+    prefix="/api/v1/tenants/{tenant_slug}/audit-logs",
+    tags=["Audit Logs"]
+)
+
+# Tools module - notes, tasks, logcalls, events
 app.include_router(
     tools_router,
     prefix="/api/v1/tenants/{tenant_slug}/tools",

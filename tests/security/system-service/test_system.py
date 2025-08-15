@@ -663,7 +663,7 @@ class TestSystemSecurity:
             "description": "This is a test task",
             "status": "pending",
             "priority": "high",
-            "due_date": (datetime.now() + timedelta(days=7)).isoformat(),
+            "due_date": (datetime.now().date() + timedelta(days=7)).isoformat(),
             "taskable_id": 1,
             "taskable_type": "user"
         }
