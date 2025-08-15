@@ -7,42 +7,16 @@ from pydantic import BaseModel, Field, validator
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 from uuid import UUID
-from enum import Enum
+from common.enums import (
+    ChatChannelType,
+    MemberRole,
+    NotificationLevel,
+    EntryType,
+    MentionType
+)
 
 
-# ============================================
-# ENUMS
-# ============================================
-
-class ChannelTypeEnum(str, Enum):
-    public = "public"
-    private = "private"
-    direct = "direct"
-
-
-class MemberRoleEnum(str, Enum):
-    admin = "admin"
-    moderator = "moderator"
-    member = "member"
-
-
-class NotificationLevelEnum(str, Enum):
-    all = "all"
-    mentions = "mentions"
-    none = "none"
-
-
-class EntryTypeEnum(str, Enum):
-    message = "message"
-    join = "join"
-    leave = "leave"
-    system = "system"
-
-
-class MentionTypeEnum(str, Enum):
-    user = "user"
-    everyone = "everyone"
-    here = "here"
+# Note: Enums are now imported from common.enums
 
 
 # ============================================
@@ -53,8 +27,15 @@ class ChannelBase(BaseModel):
     name: str = Field(..., max_length=255)
     slug: str = Field(..., max_length=100)
     description: Optional[str] = None
-    type: ChannelTypeEnum = ChannelTypeEnum.public
+    type: str = "public"
     max_members: Optional[int] = None
+
+    @validator('type')
+    def validate_type(cls, v):
+        valid_types = ['public', 'private', 'direct']
+        if v not in valid_types:
+            raise ValueError(f'type must be one of {valid_types}')
+        return v
 
 
 class ChannelCreate(ChannelBase):
@@ -68,6 +49,8 @@ class ChannelUpdate(BaseModel):
     is_read_only: Optional[bool] = None
     max_members: Optional[int] = None
     settings: Optional[Dict[str, Any]] = None
+
+
 
 
 class ChannelResponse(ChannelBase):
@@ -92,7 +75,7 @@ class ChannelResponse(ChannelBase):
 
 class ChannelMemberBase(BaseModel):
     user_id: UUID
-    role: MemberRoleEnum = MemberRoleEnum.member
+    role: MemberRole = MemberRole.member
     nickname: Optional[str] = Field(None, max_length=100)
 
 
@@ -101,17 +84,17 @@ class ChannelMemberAdd(ChannelMemberBase):
 
 
 class ChannelMemberUpdate(BaseModel):
-    role: Optional[MemberRoleEnum] = None
+    role: Optional[MemberRole] = None
     nickname: Optional[str] = Field(None, max_length=100)
     is_muted: Optional[bool] = None
-    notification_level: Optional[NotificationLevelEnum] = None
+    notification_level: Optional[NotificationLevel] = None
 
 
 class ChannelMemberResponse(ChannelMemberBase):
     id: int
     channel_id: int
     is_muted: bool
-    notification_level: NotificationLevelEnum
+    notification_level: NotificationLevel
     last_read_at: Optional[datetime]
     last_read_entry_id: Optional[int]
     unread_count: int
@@ -127,9 +110,9 @@ class ChannelMemberResponse(ChannelMemberBase):
 # ============================================
 
 class ChatEntryBase(BaseModel):
-    type: EntryTypeEnum = EntryTypeEnum.message
-    content: Optional[str] = None
-    attachments: Optional[List[Dict[str, Any]]] = None
+    content: str = Field(..., min_length=1)
+    type: EntryType = EntryType.message
+    attachments: Optional[List[Dict[str, Any]]] = []
     reply_to_id: Optional[int] = None
 
 
@@ -172,11 +155,12 @@ class ChatEntryResponse(ChatEntryBase):
 class MentionResponse(BaseModel):
     id: int
     entry_id: int
-    mentioned_user_id: Optional[UUID]
-    mention_type: MentionTypeEnum
-    position: Optional[int]
+    mentioned_user_id: UUID
+    mention_type: MentionType
+    position_start: Optional[int]
+    position_end: Optional[int]
     is_read: bool
-    read_at: Optional[datetime]
+    notified_at: Optional[datetime]
     created_at: datetime
 
     class Config:

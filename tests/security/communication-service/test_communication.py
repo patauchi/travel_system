@@ -1,19 +1,15 @@
 """
-Security Test - Communication Service
-Testing:
-1. Create a tenant with super_admin
-2. Authenticate tenant owner
-3. Test endpoints WITHOUT token (should fail)
-4. Test endpoints WITH token (should succeed)
-5. Test cross-tenant access (should fail)
+Communication Service Security Tests
+Comprehensive testing of all CRUD operations and security features
+Based on the same pattern as test_system.py
 """
 
 import httpx
 import asyncio
-from typing import Dict, Any, Optional
+from typing import Dict, Any, List, Optional
+from datetime import datetime, timedelta
 import uuid
 import json
-from datetime import datetime
 
 # Test configuration
 BASE_URL = "http://localhost"
@@ -23,7 +19,7 @@ COMMUNICATION_SERVICE_URL = f"{BASE_URL}:8005"
 SYSTEM_SERVICE_URL = f"{BASE_URL}:8008"
 
 # Default super_admin credentials (from init.sql)
-SUPER_ADMIN_USERNAME = "admin"
+SUPER_ADMIN_USERNAME = "superadmin"
 SUPER_ADMIN_PASSWORD = "SuperAdmin123!"
 
 
@@ -36,6 +32,16 @@ class TestCommunicationSecurity:
         self.tenant_slug = None
         self.owner_token = None
         self.super_admin_token = None
+        self.unique_id = None
+
+        # Store created IDs for cleanup
+        self.created_conversation_id = None
+        self.created_message_id = None
+        self.created_quick_reply_id = None
+        self.created_channel_id = None
+        self.created_channel_member_id = None
+        self.created_chat_entry_id = None
+        self.created_mention_id = None
 
     async def setup_tenant(self) -> Dict[str, Any]:
         """Create a new tenant for testing"""
@@ -51,144 +57,114 @@ class TestCommunicationSecurity:
                 data={
                     "username": SUPER_ADMIN_USERNAME,
                     "password": SUPER_ADMIN_PASSWORD
-                },
-                headers={"Content-Type": "application/x-www-form-urlencoded"}
+                }
             )
 
-            assert login_response.status_code == 200, f"Super admin login failed: {login_response.text}"
+            if login_response.status_code != 200:
+                print(f"❌ Failed to login as super_admin: {login_response.status_code}")
+                return {"success": False}
+
             auth_data = login_response.json()
             self.super_admin_token = auth_data["access_token"]
-            print(f"✅ Super admin logged in successfully")
+            print("✅ Super admin logged in successfully")
 
             # Create tenant
             print("\n[2] Creating test tenant...")
-            unique_id = uuid.uuid4().hex[:8]
-            self.tenant_data = {
-                "name": f"Test Communication Company {unique_id}",
-                "slug": f"test-comm-{unique_id}",
-                "subdomain": f"test-comm-{unique_id}",
-                "owner_email": f"owner_{unique_id}@testcomm.com",
-                "owner_username": f"owner_comm_{unique_id}",
-                "owner_password": "OwnerPassword123!",
-                "owner_first_name": "Test",
-                "owner_last_name": "Owner",
-                "subscription_plan": "professional",
-                "max_users": 50,
-                "settings": {
-                    "theme": "default",
-                    "timezone": "UTC"
-                }
-            }
-
-            headers = {
-                "Authorization": f"Bearer {self.super_admin_token}",
-                "Content-Type": "application/json"
-            }
+            unique_id = str(uuid.uuid4())[:8]
+            self.tenant_slug = f"test-comm-{unique_id}"
+            self.unique_id = unique_id
 
             tenant_response = await client.post(
                 f"{TENANT_SERVICE_URL}/api/v1/tenants/v2",
-                json=self.tenant_data,
-                headers=headers
+                headers={"Authorization": f"Bearer {self.super_admin_token}"},
+                json={
+                    "slug": self.tenant_slug,
+                    "name": f"Test Communication Tenant {unique_id}",
+                    "subdomain": self.tenant_slug,
+                    "owner_email": f"owner_comm_{unique_id}@test.com",
+                    "owner_username": f"owner_comm_{unique_id}",
+                    "owner_password": "OwnerPass123!",
+                    "owner_first_name": "Test",
+                    "owner_last_name": "Owner",
+                    "subscription_plan": "professional",
+                    "max_users": 50,
+                    "settings": {
+                        "timezone": "UTC",
+                        "language": "en",
+                        "currency": "USD"
+                    }
+                }
             )
 
-            self.tenant_slug = self.tenant_data["slug"]  # Always set from data
+            if tenant_response.status_code not in [200, 201]:
+                print(f"❌ Failed to create tenant: {tenant_response.status_code}")
+                print(f"   Response: {tenant_response.text}")
+                return {"success": False}
 
-            if tenant_response.status_code in [200, 201]:
-                tenant_result = tenant_response.json()
-                if "tenant" in tenant_result:
-                    self.tenant_id = tenant_result["tenant"]["id"]
-                print(f"✅ Tenant created: {self.tenant_slug}")
-            elif tenant_response.status_code == 500:
-                # Partial success - tenant created but schema initialization pending
-                self.tenant_slug = self.tenant_data["slug"]
-                print(f"✅ Tenant record created: {self.tenant_slug}")
-                print(f"⚠️  Schema initialization may be pending")
+            result = tenant_response.json()
+            if "tenant" in result:
+                self.tenant_data = result["tenant"]
+                self.tenant_id = self.tenant_data["id"]
             else:
-                raise Exception(f"Failed to create tenant: {tenant_response.status_code} - {tenant_response.text}")
+                # Fallback for different response formats
+                self.tenant_data = result
+                self.tenant_id = result.get("id")
+            print(f"✅ Tenant created: {self.tenant_slug}")
 
-            return self.tenant_data
+            return {"success": True}
 
-    async def authenticate_tenant_owner(self) -> Optional[str]:
-        """Authenticate as the tenant owner"""
+    async def authenticate_owner(self) -> bool:
+        """Authenticate as tenant owner"""
         async with httpx.AsyncClient(timeout=30.0) as client:
             print("\n" + "="*60)
             print("AUTHENTICATION: Tenant Owner Login")
             print("="*60)
 
-            # Try tenant-specific login first
             print(f"\n[1] Attempting tenant-specific login for {self.tenant_slug}...")
 
-            # Get tenant ID first if we don't have it
-            if not self.tenant_id:
-                headers = {
-                    "Authorization": f"Bearer {self.super_admin_token}",
-                    "Content-Type": "application/json"
-                }
-                tenants_response = await client.get(
-                    f"{TENANT_SERVICE_URL}/api/v1/tenants",
-                    headers=headers
-                )
-                if tenants_response.status_code == 200:
-                    tenants = tenants_response.json()
-                    for tenant in tenants:
-                        if tenant.get("slug") == self.tenant_slug:
-                            self.tenant_id = tenant.get("id")
-                            break
-
-            if self.tenant_id:
-                # Try system-service tenant login
-                login_data = {
-                    "email": self.tenant_data["owner_email"],
-                    "password": self.tenant_data["owner_password"],
-                    "tenant_id": self.tenant_id
-                }
-
-                tenant_login_response = await client.post(
-                    f"{SYSTEM_SERVICE_URL}/api/v1/auth/tenant/login",
-                    json=login_data,
-                    headers={
-                        "Content-Type": "application/json",
-                        "X-Tenant-ID": self.tenant_id
+            # Try communication-service specific login endpoint first
+            try:
+                login_response = await client.post(
+                    f"{COMMUNICATION_SERVICE_URL}/api/v1/auth/tenant/login",
+                    headers={"X-Tenant-ID": self.tenant_id},
+                    json={
+                        "email": f"owner_comm_{self.unique_id}@test.com",
+                        "password": "OwnerPass123!",
+                        "tenant_id": self.tenant_id
                     }
                 )
 
-                if tenant_login_response.status_code == 200:
-                    auth_data = tenant_login_response.json()
+                if login_response.status_code == 200:
+                    auth_data = login_response.json()
                     self.owner_token = auth_data["access_token"]
-                    print(f"✅ Tenant owner authenticated successfully via system-service")
-                    return self.owner_token
-                else:
-                    print(f"⚠️  Tenant login failed: {tenant_login_response.status_code}")
+                    print("✅ Tenant owner authenticated successfully")
+                    return True
+            except Exception as e:
+                print(f"   Communication service login failed: {e}")
 
-            # Fallback to regular auth service login with tenant header
-            print(f"\n[2] Fallback: Trying auth-service login with tenant header...")
-            headers = {
-                "Content-Type": "application/x-www-form-urlencoded"
-            }
-            if self.tenant_slug:
-                headers["X-Tenant-Slug"] = self.tenant_slug
-
+            # Fallback to auth-service login
+            print("\n[2] Fallback: Trying auth-service login with tenant header...")
             login_response = await client.post(
                 f"{AUTH_SERVICE_URL}/api/v1/auth/login",
+                headers={"X-Tenant-Slug": self.tenant_slug},
                 data={
-                    "username": self.tenant_data["owner_username"],
-                    "password": self.tenant_data["owner_password"]
-                },
-                headers=headers
+                    "username": f"owner_comm_{self.unique_id}",
+                    "password": "OwnerPass123!"
+                }
             )
 
             if login_response.status_code == 200:
                 auth_data = login_response.json()
                 self.owner_token = auth_data["access_token"]
-                print(f"✅ Tenant owner authenticated successfully via auth-service")
-                return self.owner_token
-            else:
-                print(f"⚠️  Owner authentication failed: {login_response.status_code}")
-                print(f"   This is expected if tenant schema is not fully initialized")
-                return None
+                print("✅ Tenant owner authenticated successfully via auth-service")
+                return True
 
-    async def test_endpoints_without_token(self):
-        """Test communication endpoints WITHOUT authentication token"""
+            print(f"❌ Failed to authenticate owner: {login_response.status_code}")
+            print(f"   Response: {login_response.text}")
+            return False
+
+    async def test_endpoints_without_token(self) -> List[tuple]:
+        """Test that protected endpoints reject requests without authentication"""
         async with httpx.AsyncClient(timeout=30.0) as client:
             print("\n" + "="*60)
             print("TEST: Communication Endpoints WITHOUT Token")
@@ -196,85 +172,64 @@ class TestCommunicationSecurity:
 
             test_results = []
 
-            # Test 1: Get service info (should work without auth)
-            print("\n[1] Testing GET /api/v1/info (public endpoint)")
-            response = await client.get(f"{COMMUNICATION_SERVICE_URL}/api/v1/info")
-            if response.status_code == 200:
-                print(f"✅ Public endpoint accessible without token")
-                test_results.append(("GET /api/v1/info", "PASS"))
-            else:
-                print(f"❌ Public endpoint failed: {response.status_code}")
-                test_results.append(("GET /api/v1/info", "FAIL"))
+            # Test public endpoints (should work without auth)
+            public_tests = [
+                ("GET", "/", "Root endpoint"),
+                ("GET", "/health", "Health check"),
+                ("GET", "/api/v1/info", "Service info")
+            ]
 
-            # Test 2: Health check (should work without auth)
-            print("\n[2] Testing GET /health (public endpoint)")
-            response = await client.get(f"{COMMUNICATION_SERVICE_URL}/health")
-            if response.status_code == 200:
-                print(f"✅ Health check accessible without token")
-                test_results.append(("GET /health", "PASS"))
-            else:
-                print(f"❌ Health check failed: {response.status_code}")
-                test_results.append(("GET /health", "FAIL"))
+            test_num = 1
+            for method, endpoint, description in public_tests:
+                print(f"\n[{test_num}] Testing {method} {endpoint} ({description})")
+                response = await client.request(method, f"{COMMUNICATION_SERVICE_URL}{endpoint}")
 
-            # Test 3: Get conversations (should fail without auth)
-            print(f"\n[3] Testing GET /api/v1/tenants/{self.tenant_slug}/conversations/ (protected)")
-            response = await client.get(
-                f"{COMMUNICATION_SERVICE_URL}/api/v1/tenants/{self.tenant_slug}/conversations/"
-            )
-            if response.status_code in [401, 403]:
-                print(f"✅ Protected endpoint correctly rejected request (status: {response.status_code})")
-                test_results.append(("GET /conversations without auth", "PASS"))
-            else:
-                print(f"❌ Protected endpoint should reject unauthenticated request but got: {response.status_code}")
-                test_results.append(("GET /conversations without auth", "FAIL"))
+                if response.status_code == 200:
+                    print(f"✅ {description} accessible without token")
+                    test_results.append((f"{method} {endpoint}", "PASS"))
+                else:
+                    print(f"❌ {description} failed: {response.status_code}")
+                    test_results.append((f"{method} {endpoint}", "FAIL"))
+                test_num += 1
 
-            # Test 4: Create conversation (should fail without auth)
-            print(f"\n[4] Testing POST /api/v1/tenants/{self.tenant_slug}/conversations/ (protected)")
-            conversation_data = {
-                "channel": "email",
-                "external_id": f"test_{uuid.uuid4().hex[:8]}",
-                "contact_identifier": "test@example.com",
-                "contact_name": "Test Contact",
-                "contact_email": "test@example.com",
-                "subject": "Test Conversation"
-            }
-            response = await client.post(
-                f"{COMMUNICATION_SERVICE_URL}/api/v1/tenants/{self.tenant_slug}/conversations/",
-                json=conversation_data
-            )
-            if response.status_code in [401, 403]:
-                print(f"✅ Create conversation correctly rejected without auth (status: {response.status_code})")
-                test_results.append(("POST /conversations without auth", "PASS"))
-            else:
-                print(f"❌ Create should require authentication but got: {response.status_code}")
-                test_results.append(("POST /conversations without auth", "FAIL"))
+            # Test protected endpoints (should fail without auth)
+            protected_tests = [
+                ("GET", f"/api/v1/tenants/{self.tenant_slug}/conversations/", "conversations list"),
+                ("POST", f"/api/v1/tenants/{self.tenant_slug}/conversations/", "create conversation"),
+                ("GET", f"/api/v1/tenants/{self.tenant_slug}/messages/", "messages list"),
+                ("POST", f"/api/v1/tenants/{self.tenant_slug}/messages/", "create message"),
+                ("GET", f"/api/v1/tenants/{self.tenant_slug}/quick-replies/", "quick replies list"),
+                ("POST", f"/api/v1/tenants/{self.tenant_slug}/quick-replies/", "create quick reply"),
+                ("GET", f"/api/v1/tenants/{self.tenant_slug}/channels/", "channels list"),
+                ("POST", f"/api/v1/tenants/{self.tenant_slug}/channels/", "create channel"),
+                ("GET", "/api/v1/auth/test", "auth test endpoint")
+            ]
 
-            # Test 5: Get channels (should fail without auth)
-            print(f"\n[5] Testing GET /api/v1/tenants/{self.tenant_slug}/channels/ (protected)")
-            response = await client.get(
-                f"{COMMUNICATION_SERVICE_URL}/api/v1/tenants/{self.tenant_slug}/channels/"
-            )
-            if response.status_code in [401, 403]:
-                print(f"✅ Channels endpoint correctly rejected request (status: {response.status_code})")
-                test_results.append(("GET /channels without auth", "PASS"))
-            else:
-                print(f"❌ Channels should require authentication but got: {response.status_code}")
-                test_results.append(("GET /channels without auth", "FAIL"))
+            for method, endpoint, description in protected_tests:
+                print(f"\n[{test_num}] Testing {method} {endpoint} ({description})")
 
-            # Test 6: Authentication test endpoint (should fail)
-            print(f"\n[6] Testing GET /api/v1/auth/test (requires auth)")
-            response = await client.get(f"{COMMUNICATION_SERVICE_URL}/api/v1/auth/test")
-            if response.status_code in [401, 403]:
-                print(f"✅ Auth test endpoint correctly rejected request (status: {response.status_code})")
-                test_results.append(("GET /auth/test without token", "PASS"))
-            else:
-                print(f"❌ Auth test should require token but got: {response.status_code}")
-                test_results.append(("GET /auth/test without token", "FAIL"))
+                headers = {"Content-Type": "application/json"}
+                data = {"test": "data"} if method == "POST" else None
+
+                response = await client.request(
+                    method,
+                    f"{COMMUNICATION_SERVICE_URL}{endpoint}",
+                    headers=headers,
+                    json=data
+                )
+
+                if response.status_code == 401:
+                    print(f"✅ {description.title()} correctly rejected request (status: 401)")
+                    test_results.append((f"{method} {description}", "PASS"))
+                else:
+                    print(f"❌ {description.title()} should reject unauthenticated request: {response.status_code}")
+                    test_results.append((f"{method} {description}", "FAIL"))
+                test_num += 1
 
             return test_results
 
-    async def test_endpoints_with_token(self):
-        """Test communication endpoints WITH authentication token"""
+    async def test_authenticated_endpoints(self) -> List[tuple]:
+        """Test all CRUD operations with authentication"""
         if not self.owner_token:
             print("\n⚠️  Skipping authenticated tests - no valid token available")
             return []
@@ -290,105 +245,326 @@ class TestCommunicationSecurity:
                 "Content-Type": "application/json"
             }
 
-            # Test 1: Authentication test endpoint
-            print("\n[1] Testing GET /api/v1/auth/test with token")
+            # ========================================
+            # Authentication Tests
+            # ========================================
+            print("\n========================================")
+            print("Testing Authentication")
+            print("========================================")
+
+            # Test auth endpoint
+            print("\n[1] Testing authentication endpoint")
             response = await client.get(
                 f"{COMMUNICATION_SERVICE_URL}/api/v1/auth/test",
                 headers=headers
             )
+
             if response.status_code == 200:
-                print(f"✅ Authentication verified successfully")
-                auth_info = response.json()
-                print(f"   User: {auth_info.get('user', {}).get('username')}")
-                print(f"   Tenant: {auth_info.get('user', {}).get('tenant_slug')}")
-                test_results.append(("GET /auth/test with token", "PASS"))
+                print("✅ Authentication verified successfully")
+                test_results.append(("GET /auth/test", "PASS"))
             else:
                 print(f"❌ Authentication test failed: {response.status_code}")
-                test_results.append(("GET /auth/test with token", "FAIL"))
+                test_results.append(("GET /auth/test", "FAIL"))
 
-            # Test 2: Tenant-specific auth test
-            print(f"\n[2] Testing GET /api/v1/tenants/{self.tenant_slug}/auth/test")
-            response = await client.get(
-                f"{COMMUNICATION_SERVICE_URL}/api/v1/tenants/{self.tenant_slug}/auth/test",
-                headers=headers
-            )
-            if response.status_code == 200:
-                print(f"✅ Tenant access verified successfully")
-                test_results.append(("GET /tenants/{slug}/auth/test", "PASS"))
-            else:
-                print(f"❌ Tenant auth test failed: {response.status_code}")
-                if response.status_code == 403:
-                    print(f"   Access denied - token may not have correct tenant association")
-                test_results.append(("GET /tenants/{slug}/auth/test", "FAIL"))
+            # ========================================
+            # Inbox Module Tests
+            # ========================================
+            print("\n========================================")
+            print("Testing Inbox Module")
+            print("========================================")
 
-            # Test 3: Get conversations (should work with auth)
-            print(f"\n[3] Testing GET /api/v1/tenants/{self.tenant_slug}/conversations/ with auth")
-            response = await client.get(
-                f"{COMMUNICATION_SERVICE_URL}/api/v1/tenants/{self.tenant_slug}/conversations/",
-                headers=headers
-            )
-            if response.status_code == 200:
-                print(f"✅ Successfully retrieved conversations")
-                conversations = response.json()
-                print(f"   Found {len(conversations)} conversations")
-                test_results.append(("GET /conversations with auth", "PASS"))
-            elif response.status_code == 500:
-                print(f"⚠️  Server error - likely schema not initialized")
-                test_results.append(("GET /conversations with auth", "SKIP"))
-            else:
-                print(f"❌ Failed to get conversations: {response.status_code}")
-                test_results.append(("GET /conversations with auth", "FAIL"))
+            # --- Conversations CRUD ---
+            print("\n--- Conversations Module CRUD ---")
 
-            # Test 4: Create conversation
-            print(f"\n[4] Testing POST /api/v1/tenants/{self.tenant_slug}/conversations/ with auth")
+            # CREATE Conversation
+            print("\n[1] CREATE Conversation")
             conversation_data = {
-                "channel": "email",
-                "external_id": f"test_{uuid.uuid4().hex[:8]}",
-                "contact_identifier": "test@example.com",
-                "contact_name": "Test Contact",
-                "contact_email": "test@example.com",
-                "subject": "Test Conversation",
-                "status": "open"
+                "external_id": f"conv_{self.unique_id}_001",
+                "channel": "whatsapp",
+                "contact_name": "John Doe",
+                "contact_identifier": "+1234567890",
+                "first_message": "Hello, this is a test conversation",
+                "status": "open",
+                "priority": "normal",
+                "contact_metadata": {"source": "test"},
+                "platform_metadata": {"test": True}
             }
+
             response = await client.post(
                 f"{COMMUNICATION_SERVICE_URL}/api/v1/tenants/{self.tenant_slug}/conversations/",
-                json=conversation_data,
-                headers=headers
+                headers=headers,
+                json=conversation_data
             )
-            if response.status_code in [200, 201]:
-                print(f"✅ Successfully created conversation")
-                created = response.json()
-                conversation_id = created.get("id")
-                print(f"   Conversation ID: {conversation_id}")
-                test_results.append(("POST /conversations with auth", "PASS"))
-            elif response.status_code == 500:
-                print(f"⚠️  Server error - likely schema not initialized")
-                test_results.append(("POST /conversations with auth", "SKIP"))
+
+            if response.status_code == 201:
+                conversation = response.json()
+                self.created_conversation_id = conversation["id"]
+                print(f"✅ Conversation created: {self.created_conversation_id}")
+                test_results.append(("CREATE Conversation", "PASS"))
             else:
                 print(f"❌ Failed to create conversation: {response.status_code}")
-                test_results.append(("POST /conversations with auth", "FAIL"))
+                test_results.append(("CREATE Conversation", "FAIL"))
 
-            # Test 5: Get channels
-            print(f"\n[5] Testing GET /api/v1/tenants/{self.tenant_slug}/channels/ with auth")
+            # READ Conversations (List)
+            print("\n[2] READ Conversations (List)")
+            response = await client.get(
+                f"{COMMUNICATION_SERVICE_URL}/api/v1/tenants/{self.tenant_slug}/conversations/",
+                headers=headers
+            )
+
+            if response.status_code == 200:
+                conversations = response.json()
+                print(f"✅ Retrieved {len(conversations)} conversations")
+                test_results.append(("READ Conversations", "PASS"))
+            else:
+                print(f"❌ Failed to list conversations: {response.status_code}")
+                test_results.append(("READ Conversations", "FAIL"))
+
+            # READ Conversation (Single)
+            if self.created_conversation_id:
+                print("\n[3] READ Conversation (Single)")
+                response = await client.get(
+                    f"{COMMUNICATION_SERVICE_URL}/api/v1/tenants/{self.tenant_slug}/conversations/{self.created_conversation_id}",
+                    headers=headers
+                )
+
+                if response.status_code == 200:
+                    print("✅ Retrieved conversation details")
+                    test_results.append(("READ Conversation details", "PASS"))
+                else:
+                    print(f"❌ Failed to get conversation: {response.status_code}")
+                    test_results.append(("READ Conversation details", "FAIL"))
+
+            # UPDATE Conversation
+            if self.created_conversation_id:
+                print("\n[4] UPDATE Conversation")
+                update_data = {
+                    "contact_name": "John Doe Updated",
+                    "status": "open"
+                }
+
+                response = await client.put(
+                    f"{COMMUNICATION_SERVICE_URL}/api/v1/tenants/{self.tenant_slug}/conversations/{self.created_conversation_id}",
+                    headers=headers,
+                    json=update_data
+                )
+
+                if response.status_code == 200:
+                    print("✅ Conversation updated")
+                    test_results.append(("UPDATE Conversation", "PASS"))
+                else:
+                    print(f"❌ Failed to update conversation: {response.status_code}")
+                    test_results.append(("UPDATE Conversation", "FAIL"))
+
+            # --- Messages CRUD ---
+            print("\n--- Messages Module CRUD ---")
+
+            # CREATE Message
+            if self.created_conversation_id:
+                print("\n[1] CREATE Message")
+                message_data = {
+                    "conversation_id": self.created_conversation_id,
+                    "content": "Hello, this is a test message",
+                    "type": "text",
+                    "direction": "in"
+                }
+
+                response = await client.post(
+                    f"{COMMUNICATION_SERVICE_URL}/api/v1/tenants/{self.tenant_slug}/messages/",
+                    headers=headers,
+                    json=message_data
+                )
+
+                if response.status_code == 201:
+                    message = response.json()
+                    self.created_message_id = message["id"]
+                    print(f"✅ Message created: {self.created_message_id}")
+                    test_results.append(("CREATE Message", "PASS"))
+                else:
+                    print(f"❌ Failed to create message: {response.status_code}")
+                    test_results.append(("CREATE Message", "FAIL"))
+
+            # READ Messages
+            print("\n[2] READ Messages")
+            response = await client.get(
+                f"{COMMUNICATION_SERVICE_URL}/api/v1/tenants/{self.tenant_slug}/messages/",
+                headers=headers
+            )
+
+            if response.status_code == 200:
+                messages = response.json()
+                print(f"✅ Retrieved {len(messages)} messages")
+                test_results.append(("READ Messages", "PASS"))
+            else:
+                print(f"❌ Failed to list messages: {response.status_code}")
+                test_results.append(("READ Messages", "FAIL"))
+
+            # --- Quick Replies CRUD ---
+            print("\n--- Quick Replies Module CRUD ---")
+
+            # CREATE Quick Reply
+            print("\n[1] CREATE Quick Reply")
+            quick_reply_data = {
+                "title": "Welcome Message",
+                "content": "Welcome to our service! How can we help you today?",
+                "category": "greetings",
+                "language": "en",
+                "shortcuts": ["hello", "hi", "welcome"]
+            }
+
+            response = await client.post(
+                f"{COMMUNICATION_SERVICE_URL}/api/v1/tenants/{self.tenant_slug}/quick-replies/",
+                headers=headers,
+                json=quick_reply_data
+            )
+
+            if response.status_code == 201:
+                quick_reply = response.json()
+                self.created_quick_reply_id = quick_reply["id"]
+                print(f"✅ Quick Reply created: {self.created_quick_reply_id}")
+                test_results.append(("CREATE Quick Reply", "PASS"))
+            else:
+                print(f"❌ Failed to create quick reply: {response.status_code}")
+                test_results.append(("CREATE Quick Reply", "FAIL"))
+
+            # READ Quick Replies
+            print("\n[2] READ Quick Replies")
+            response = await client.get(
+                f"{COMMUNICATION_SERVICE_URL}/api/v1/tenants/{self.tenant_slug}/quick-replies/",
+                headers=headers
+            )
+
+            if response.status_code == 200:
+                quick_replies = response.json()
+                print(f"✅ Retrieved {len(quick_replies)} quick replies")
+                test_results.append(("READ Quick Replies", "PASS"))
+            else:
+                print(f"❌ Failed to list quick replies: {response.status_code}")
+                test_results.append(("READ Quick Replies", "FAIL"))
+
+            # UPDATE Quick Reply
+            if self.created_quick_reply_id:
+                print("\n[3] UPDATE Quick Reply")
+                update_data = {
+                    "content": "Updated welcome message!"
+                }
+
+                response = await client.put(
+                    f"{COMMUNICATION_SERVICE_URL}/api/v1/tenants/{self.tenant_slug}/quick-replies/{self.created_quick_reply_id}",
+                    headers=headers,
+                    json=update_data
+                )
+
+                if response.status_code == 200:
+                    print("✅ Quick Reply updated")
+                    test_results.append(("UPDATE Quick Reply", "PASS"))
+                else:
+                    print(f"❌ Failed to update quick reply: {response.status_code}")
+                    test_results.append(("UPDATE Quick Reply", "FAIL"))
+
+            # DELETE Quick Reply
+            if self.created_quick_reply_id:
+                print("\n[4] DELETE Quick Reply")
+                response = await client.delete(
+                    f"{COMMUNICATION_SERVICE_URL}/api/v1/tenants/{self.tenant_slug}/quick-replies/{self.created_quick_reply_id}",
+                    headers=headers
+                )
+
+                if response.status_code in [204, 200]:
+                    print("✅ Quick Reply deleted")
+                    test_results.append(("DELETE Quick Reply", "PASS"))
+                else:
+                    print(f"❌ Failed to delete quick reply: {response.status_code}")
+                    test_results.append(("DELETE Quick Reply", "FAIL"))
+
+            # ========================================
+            # Chat Module Tests
+            # ========================================
+            print("\n========================================")
+            print("Testing Chat Module")
+            print("========================================")
+
+            # --- Channels CRUD ---
+            print("\n--- Channels Module CRUD ---")
+
+            # CREATE Channel
+            print("\n[1] CREATE Channel")
+            channel_data = {
+                "name": "General Chat",
+                "slug": f"general-{self.unique_id}",
+                "description": "General discussion channel",
+                "channel_type": "public",
+                "metadata": {"test": True}
+            }
+
+            response = await client.post(
+                f"{COMMUNICATION_SERVICE_URL}/api/v1/tenants/{self.tenant_slug}/channels/",
+                headers=headers,
+                json=channel_data
+            )
+
+            if response.status_code == 201:
+                channel = response.json()
+                self.created_channel_id = channel["id"]
+                print(f"✅ Channel created: {self.created_channel_id}")
+                test_results.append(("CREATE Channel", "PASS"))
+            else:
+                print(f"❌ Failed to create channel: {response.status_code}")
+                test_results.append(("CREATE Channel", "FAIL"))
+
+            # READ Channels
+            print("\n[2] READ Channels")
             response = await client.get(
                 f"{COMMUNICATION_SERVICE_URL}/api/v1/tenants/{self.tenant_slug}/channels/",
                 headers=headers
             )
+
             if response.status_code == 200:
-                print(f"✅ Successfully retrieved channels")
                 channels = response.json()
-                print(f"   Found {len(channels)} channels")
-                test_results.append(("GET /channels with auth", "PASS"))
-            elif response.status_code == 500:
-                print(f"⚠️  Server error - likely schema not initialized")
-                test_results.append(("GET /channels with auth", "SKIP"))
+                print(f"✅ Retrieved {len(channels)} channels")
+                test_results.append(("READ Channels", "PASS"))
             else:
-                print(f"❌ Failed to get channels: {response.status_code}")
-                test_results.append(("GET /channels with auth", "FAIL"))
+                print(f"❌ Failed to list channels: {response.status_code}")
+                test_results.append(("READ Channels", "FAIL"))
+
+            # READ Channel (Single)
+            if self.created_channel_id:
+                print("\n[3] READ Channel (Single)")
+                response = await client.get(
+                    f"{COMMUNICATION_SERVICE_URL}/api/v1/tenants/{self.tenant_slug}/channels/{self.created_channel_id}",
+                    headers=headers
+                )
+
+                if response.status_code == 200:
+                    print("✅ Retrieved channel details")
+                    test_results.append(("READ Channel details", "PASS"))
+                else:
+                    print(f"❌ Failed to get channel: {response.status_code}")
+                    test_results.append(("READ Channel details", "FAIL"))
+
+            # UPDATE Channel
+            if self.created_channel_id:
+                print("\n[4] UPDATE Channel")
+                update_data = {
+                    "description": "Updated general discussion channel"
+                }
+
+                response = await client.put(
+                    f"{COMMUNICATION_SERVICE_URL}/api/v1/tenants/{self.tenant_slug}/channels/{self.created_channel_id}",
+                    headers=headers,
+                    json=update_data
+                )
+
+                if response.status_code == 200:
+                    print("✅ Channel updated")
+                    test_results.append(("UPDATE Channel", "PASS"))
+                else:
+                    print(f"❌ Failed to update channel: {response.status_code}")
+                    test_results.append(("UPDATE Channel", "FAIL"))
 
             return test_results
 
-    async def test_cross_tenant_access(self):
+    async def test_cross_tenant_access(self) -> List[tuple]:
         """Test that users cannot access other tenants' data"""
         if not self.owner_token:
             print("\n⚠️  Skipping cross-tenant tests - no valid token available")
@@ -405,39 +581,40 @@ class TestCommunicationSecurity:
                 "Content-Type": "application/json"
             }
 
-            # Test accessing a different tenant's data
-            fake_tenant_slug = "non-existent-tenant-xyz"
+            # Test accessing different tenant's data
+            wrong_tenant = "non-existent-tenant-xyz"
 
-            print(f"\n[1] Testing access to different tenant: {fake_tenant_slug}")
-            response = await client.get(
-                f"{COMMUNICATION_SERVICE_URL}/api/v1/tenants/{fake_tenant_slug}/auth/test",
-                headers=headers
-            )
-            if response.status_code in [403, 404]:
-                print(f"✅ Correctly denied access to different tenant (status: {response.status_code})")
-                test_results.append(("Cross-tenant access denied", "PASS"))
-            else:
-                print(f"❌ Should deny cross-tenant access but got: {response.status_code}")
-                test_results.append(("Cross-tenant access denied", "FAIL"))
+            cross_tenant_tests = [
+                ("conversations access", f"/api/v1/tenants/{wrong_tenant}/conversations/"),
+                ("messages access", f"/api/v1/tenants/{wrong_tenant}/messages/"),
+                ("quick replies access", f"/api/v1/tenants/{wrong_tenant}/quick-replies/"),
+                ("channels access", f"/api/v1/tenants/{wrong_tenant}/channels/"),
+                ("auth test access", f"/api/v1/tenants/{wrong_tenant}/auth/test")
+            ]
 
-            print(f"\n[2] Testing conversation access with wrong tenant")
-            response = await client.get(
-                f"{COMMUNICATION_SERVICE_URL}/api/v1/tenants/{fake_tenant_slug}/conversations/",
-                headers=headers
-            )
-            if response.status_code in [403, 404]:
-                print(f"✅ Correctly denied conversation access to wrong tenant (status: {response.status_code})")
-                test_results.append(("Cross-tenant conversation access", "PASS"))
-            else:
-                print(f"❌ Should deny access but got: {response.status_code}")
-                test_results.append(("Cross-tenant conversation access", "FAIL"))
+            test_num = 1
+            for description, endpoint in cross_tenant_tests:
+                print(f"\n[{test_num}] Testing {description} to wrong tenant")
+
+                response = await client.get(
+                    f"{COMMUNICATION_SERVICE_URL}{endpoint}",
+                    headers=headers
+                )
+
+                if response.status_code == 403:
+                    print(f"✅ Correctly denied {description} to wrong tenant (status: 403)")
+                    test_results.append((f"Cross-tenant {description}", "PASS"))
+                else:
+                    print(f"❌ Should deny {description} to wrong tenant: {response.status_code}")
+                    test_results.append((f"Cross-tenant {description}", "FAIL"))
+                test_num += 1
 
             return test_results
 
     async def run_all_tests(self):
         """Run all security tests for Communication Service"""
         print("\n" + "="*80)
-        print("COMMUNICATION SERVICE SECURITY TESTS")
+        print("COMMUNICATION SERVICE SECURITY TESTS - COMPREHENSIVE CRUD")
         print("="*80)
         print(f"Started at: {datetime.now().isoformat()}")
 
@@ -445,20 +622,32 @@ class TestCommunicationSecurity:
 
         try:
             # Setup
-            await self.setup_tenant()
+            print("\n[PHASE 1] Setting up test tenant...")
+            setup_result = await self.setup_tenant()
+            if not setup_result.get("success"):
+                print("❌ Setup failed, aborting tests")
+                return
 
-            # Try to authenticate
-            await self.authenticate_tenant_owner()
+            print("\n[PHASE 2] Authenticating as tenant owner...")
+            auth_success = await self.authenticate_owner()
+            if not auth_success:
+                print("❌ Authentication failed, aborting authenticated tests")
 
-            # Run tests
+            # Test endpoints without auth
+            print("\n[PHASE 3] Testing endpoints without authentication...")
             results1 = await self.test_endpoints_without_token()
             all_results.extend(results1)
 
-            results2 = await self.test_endpoints_with_token()
-            all_results.extend(results2)
+            # Test authenticated endpoints
+            if auth_success:
+                print("\n[PHASE 4] Testing CRUD operations with authentication...")
+                results2 = await self.test_authenticated_endpoints()
+                all_results.extend(results2)
 
-            results3 = await self.test_cross_tenant_access()
-            all_results.extend(results3)
+                # Test cross-tenant access
+                print("\n[PHASE 5] Testing cross-tenant access prevention...")
+                results3 = await self.test_cross_tenant_access()
+                all_results.extend(results3)
 
             # Summary
             print("\n" + "="*80)
@@ -475,7 +664,42 @@ class TestCommunicationSecurity:
             print(f"❌ Failed: {failed}")
             print(f"⚠️  Skipped: {skipped}")
 
-            print("\nDetailed Results:")
+            # Group results by module
+            module_results = {}
+            for test_name, status in all_results:
+                if "Conversation" in test_name:
+                    module = "Conversations"
+                elif "Message" in test_name:
+                    module = "Messages"
+                elif "Quick Reply" in test_name:
+                    module = "Quick Replies"
+                elif "Channel" in test_name:
+                    module = "Channels"
+                elif "Cross-tenant" in test_name:
+                    module = "Cross-tenant"
+                elif any(x in test_name for x in ["GET /", "GET /health", "GET /api/v1/info"]):
+                    module = "Public Endpoints"
+                elif "auth" in test_name.lower():
+                    module = "Authentication"
+                else:
+                    module = "Other"
+
+                if module not in module_results:
+                    module_results[module] = {"passed": 0, "failed": 0}
+
+                if status == "PASS":
+                    module_results[module]["passed"] += 1
+                elif status == "FAIL":
+                    module_results[module]["failed"] += 1
+
+            if module_results:
+                print(f"\nModule Results:")
+                for module, results in module_results.items():
+                    print(f"  {module}:")
+                    print(f"    ✅ Passed: {results['passed']}")
+                    print(f"    ❌ Failed: {results['failed']}")
+
+            print("\nDetailed Test Results:")
             for test_name, status in all_results:
                 symbol = "✅" if status == "PASS" else "❌" if status == "FAIL" else "⚠️"
                 print(f"  {symbol} {test_name}: {status}")
@@ -485,7 +709,7 @@ class TestCommunicationSecurity:
                 print("🎉 ALL SECURITY TESTS PASSED! 🎉")
             else:
                 print(f"⚠️  {failed} tests failed - review security configuration")
-            print("="*80 + "\n")
+            print("="*80)
 
             return all_results
 

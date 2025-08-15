@@ -132,6 +132,41 @@ class InboxConversation(Base):
         Index('idx_duplicate_check', 'channel', 'contact_identifier', 'created_at'),
     )
 
+    def __repr__(self):
+        try:
+            return f"<InboxConversation {self.id}>"
+        except:
+            return f"<InboxConversation (detached)>"
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "external_id": self.external_id,
+            "channel": self.channel.value if self.channel else None,
+            "contact_name": self.contact_name,
+            "contact_identifier": self.contact_identifier,
+            "contact_metadata": self.contact_metadata,
+            "status": self.status.value if self.status else None,
+            "priority": self.priority.value if self.priority else None,
+            "is_spam": self.is_spam,
+            "first_message": self.first_message,
+            "last_message": self.last_message,
+            "message_count": self.message_count,
+            "unread_count": self.unread_count,
+            "assigned_to": str(self.assigned_to) if self.assigned_to else None,
+            "assigned_at": self.assigned_at.isoformat() if self.assigned_at else None,
+            "is_lead": self.is_lead,
+            "lead_id": self.lead_id,
+            "qualified_at": self.qualified_at.isoformat() if self.qualified_at else None,
+            "qualified_by": str(self.qualified_by) if self.qualified_by else None,
+            "tags": self.tags,
+            "platform_metadata": self.platform_metadata,
+            "last_message_at": self.last_message_at.isoformat() if self.last_message_at else None,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            "archived_at": self.archived_at.isoformat() if self.archived_at else None
+        }
+
 # ============================================
 # INBOX MESSAGES TABLE
 # ============================================
@@ -173,6 +208,26 @@ class InboxMessage(Base):
         Index('idx_conversation_timeline', 'conversation_id', 'created_at'),
     )
 
+    def __repr__(self):
+        try:
+            return f"<InboxMessage {self.id}>"
+        except:
+            return f"<InboxMessage (detached)>"
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "conversation_id": self.conversation_id,
+            "external_id": self.external_id,
+            "direction": self.direction.value if self.direction else None,
+            "type": self.type.value if self.type else None,
+            "content": self.content,
+            "media_url": self.media_url,
+            "status": self.status.value if self.status else None,
+            "status_updated_at": self.status_updated_at.isoformat() if self.status_updated_at else None,
+            "created_at": self.created_at.isoformat() if self.created_at else None
+        }
+
 # ============================================
 # INBOX QUICK REPLIES TABLE
 # ============================================
@@ -188,6 +243,8 @@ class InboxQuickReply(Base):
     title = Column(String(100), nullable=False, comment='Short title for the quick reply')
     content = Column(Text, nullable=False, comment='The actual message content')
     category = Column(String(50), nullable=True, comment='Category for grouping')
+    language = Column(String(10), nullable=True, default='en', comment='Language code (en, es, fr, etc.)')
+    shortcuts = Column(JSONB, nullable=True, comment='Keyboard shortcuts for quick access')
     is_active = Column(Boolean, default=True)
 
     # Usage tracking
@@ -201,5 +258,27 @@ class InboxQuickReply(Base):
     # Table arguments for indexes
     __table_args__ = (
         Index('idx_quick_reply_category', 'category'),
-        Index('idx_quick_reply_active', 'is_active'),
+        Index('idx_quick_reply_language', 'language'),
+        Index('idx_quick_reply_usage', 'usage_count'),
     )
+
+    def __repr__(self):
+        try:
+            return f"<InboxQuickReply {self.id}>"
+        except:
+            return f"<InboxQuickReply (detached)>"
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "title": self.title,
+            "content": self.content,
+            "category": self.category,
+            "language": self.language or 'en',
+            "shortcuts": self.shortcuts,
+            "usage_count": self.usage_count if self.usage_count is not None else 0,
+            "is_active": self.is_active,
+            "created_at": self.created_at.isoformat() if self.created_at else datetime.utcnow().isoformat(),
+            "updated_at": self.updated_at.isoformat() if self.updated_at else datetime.utcnow().isoformat(),
+            "last_used_at": self.last_used_at.isoformat() if self.last_used_at else None
+        }

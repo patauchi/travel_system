@@ -52,14 +52,22 @@ async def create_conversation(
     with safe_tenant_session(tenant_slug) as db:
         # Create conversation
         conversation = InboxConversation(
-            **conversation_data.dict()
+            external_id=conversation_data.external_id,
+            channel=conversation_data.channel,
+            contact_name=conversation_data.contact_name,
+            contact_identifier=conversation_data.contact_identifier,
+            contact_metadata=conversation_data.contact_metadata,
+            status=conversation_data.status,
+            priority=conversation_data.priority,
+            first_message=conversation_data.first_message,
+            tags=conversation_data.tags,
+            platform_metadata=conversation_data.platform_metadata
         )
         db.add(conversation)
         db.commit()
         db.refresh(conversation)
 
-        # Convert to response model while still in session
-        return ConversationResponse.from_orm(conversation)
+        return conversation.to_dict()
 
 @conversations_router.get("/", response_model=List[ConversationResponse])
 async def list_conversations(
@@ -110,7 +118,7 @@ async def list_conversations(
             desc(InboxConversation.updated_at)
         ).offset(skip).limit(limit).all()
 
-        return conversations
+        return [conversation.to_dict() for conversation in conversations]
 
 @conversations_router.get("/stats", response_model=ConversationStats)
 async def get_conversation_stats(
@@ -148,7 +156,7 @@ async def get_conversation_stats(
 
 @conversations_router.get("/{conversation_id}", response_model=ConversationResponse)
 async def get_conversation(
-    conversation_id: UUID,
+    conversation_id: int,
     tenant_slug: str,
     current_user: dict = Depends(get_current_user)
 ):
@@ -165,11 +173,11 @@ async def get_conversation(
         if not conversation:
             raise HTTPException(status_code=404, detail="Conversation not found")
 
-        return conversation
+        return conversation.to_dict()
 
 @conversations_router.delete("/{conversation_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_conversation(
-    conversation_id: UUID,
+    conversation_id: int,
     tenant_slug: str,
     current_user: dict = Depends(get_current_user)
 ):
@@ -194,13 +202,12 @@ async def delete_conversation(
         db.commit()
         db.refresh(conversation)
 
-        # Convert to response model while still in session
-        return ConversationResponse.from_orm(conversation)
+        return conversation.to_dict()
 
-@conversations_router.post("/{conversation_id}/assign", response_model=ConversationResponse)
+@conversations_router.put("/{conversation_id}/assign", response_model=ConversationResponse)
 async def assign_conversation(
-    conversation_id: UUID,
-    assignment: ConversationAssign,
+    conversation_id: int,
+    assign_data: ConversationAssign,
     tenant_slug: str,
     current_user: dict = Depends(get_current_user)
 ):
@@ -218,19 +225,18 @@ async def assign_conversation(
             raise HTTPException(status_code=404, detail="Conversation not found")
 
         conversation.assigned_to = assign_data.assigned_to
-        conversation.status = 'assigned'
+        conversation.assigned_at = datetime.utcnow()
         conversation.updated_at = datetime.utcnow()
 
         db.commit()
         db.refresh(conversation)
 
-        # Convert to response model while still in session
-        return ConversationResponse.from_orm(conversation)
+        return conversation.to_dict()
 
-@conversations_router.post("/{conversation_id}/qualify", response_model=ConversationResponse)
+@conversations_router.put("/{conversation_id}/qualify", response_model=ConversationResponse)
 async def qualify_conversation(
-    conversation_id: UUID,
-    qualification: ConversationQualify,
+    conversation_id: int,
+    qualify_data: ConversationQualify,
     tenant_slug: str,
     current_user: dict = Depends(get_current_user)
 ):
@@ -247,22 +253,19 @@ async def qualify_conversation(
         if not conversation:
             raise HTTPException(status_code=404, detail="Conversation not found")
 
-        conversation.is_qualified = qualify_data.is_qualified
-        if qualify_data.qualification_score:
-            conversation.qualification_score = qualify_data.qualification_score
-        if qualify_data.notes:
-            if not conversation.metadata:
-                conversation.metadata = {}
-            conversation.metadata['qualification_notes'] = qualify_data.notes
+        conversation.is_lead = qualify_data.is_lead
+        if qualify_data.lead_id:
+            conversation.lead_id = qualify_data.lead_id
+        conversation.qualified_at = datetime.utcnow()
+        conversation.qualified_by = UUID(current_user.get("id"))
 
         conversation.updated_at = datetime.utcnow()
         db.commit()
         db.refresh(conversation)
 
-        # Convert to response model while still in session
-        return ConversationResponse.from_orm(conversation)
+        return conversation.to_dict()
 
-@conversations_router.post("/{conversation_id}/read", response_model=ConversationResponse)
+@conversations_router.put("/{conversation_id}/read", response_model=ConversationResponse)
 async def mark_conversation_read(
     conversation_id: int,
     tenant_slug: str,
@@ -286,13 +289,12 @@ async def mark_conversation_read(
         db.commit()
         db.refresh(conversation)
 
-        # Convert to response model while still in session
-        return ConversationResponse.from_orm(conversation)
+        return conversation.to_dict()
 
 @conversations_router.put("/{conversation_id}", response_model=ConversationResponse)
 async def update_conversation(
-    conversation_id: UUID,
-    conversation_update: ConversationUpdate,
+    conversation_id: int,
+    update_data: ConversationUpdate,
     tenant_slug: str,
     current_user: dict = Depends(get_current_user)
 ):
@@ -309,12 +311,16 @@ async def update_conversation(
         if not conversation:
             raise HTTPException(status_code=404, detail="Conversation not found")
 
-        conversation.is_archived = True
-        conversation.archived_at = datetime.utcnow()
+        # Update fields using System Service pattern
+        update_fields = update_data.dict(exclude_unset=True)
+        for field, value in update_fields.items():
+            setattr(conversation, field, value)
+
+        conversation.updated_at = datetime.utcnow()
         db.commit()
         db.refresh(conversation)
 
-        return conversation
+        return conversation.to_dict()
 
 # ============================================
 # MESSAGE ENDPOINTS
@@ -363,8 +369,7 @@ async def create_message(
         db.commit()
         db.refresh(message)
 
-        # Convert to response model while still in session
-        return MessageResponse.from_orm(message)
+        return message.to_dict()
 
 @messages_router.get("/", response_model=List[MessageResponse])
 async def list_messages(
@@ -389,7 +394,7 @@ async def list_messages(
             desc(InboxMessage.created_at)
         ).offset(skip).limit(limit).all()
 
-        return messages
+        return [message.to_dict() for message in messages]
 
 @messages_router.get("/conversation/{conversation_id}", response_model=List[MessageResponse])
 async def list_conversation_messages(
@@ -409,13 +414,12 @@ async def list_conversation_messages(
             InboxMessage.conversation_id == conversation_id
         ).order_by(InboxMessage.created_at).offset(skip).limit(limit).all()
 
-        # Convert to response models while still in session
-        return [MessageResponse.from_orm(msg) for msg in messages]
+        return [message.to_dict() for message in messages]
 
-@messages_router.put("/{message_id}", response_model=MessageResponse)
+@messages_router.put("/{message_id}/status", response_model=MessageResponse)
 async def update_message_status(
     message_id: int,
-    update_data: MessageUpdate,
+    status_data: MessageUpdate,
     tenant_slug: str,
     current_user: dict = Depends(get_current_user)
 ):
@@ -432,20 +436,17 @@ async def update_message_status(
         if not message:
             raise HTTPException(status_code=404, detail="Message not found")
 
-        if update_data.status:
-            message.status = update_data.status
-        if update_data.is_read is not None:
-            message.is_read = update_data.is_read
+        message.status = status_data.status
+        message.status_updated_at = datetime.utcnow()
 
         db.commit()
         db.refresh(message)
 
-        # Convert to response model while still in session
-        return MessageResponse.from_orm(message)
+        return message.to_dict()
 
 @messages_router.delete("/{message_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_message(
-    message_id: UUID,
+    message_id: int,
     tenant_slug: str,
     current_user: dict = Depends(get_current_user)
 ):
@@ -493,14 +494,18 @@ async def create_quick_reply(
             raise HTTPException(status_code=400, detail="Title already exists")
 
         quick_reply = InboxQuickReply(
-            **reply_data.dict()
+            title=reply_data.title,
+            content=reply_data.content,
+            category=reply_data.category,
+            language=reply_data.language or 'en',
+            shortcuts=reply_data.shortcuts,
+            is_active=reply_data.is_active
         )
         db.add(quick_reply)
         db.commit()
         db.refresh(quick_reply)
 
-        # Convert to response model while still in session
-        return QuickReplyResponse.from_orm(quick_reply)
+        return quick_reply.to_dict()
 
 @quick_replies_router.get("/", response_model=List[QuickReplyResponse])
 async def list_quick_replies(
@@ -512,7 +517,7 @@ async def list_quick_replies(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000)
 ):
-    """Delete a message"""
+    """List quick reply templates with filters"""
     # Validate tenant access
     validate_tenant_access(current_user, tenant_slug)
 
@@ -538,11 +543,11 @@ async def list_quick_replies(
             InboxQuickReply.category, InboxQuickReply.title
         ).offset(skip).limit(limit).all()
 
-        return quick_replies
+        return [quick_reply.to_dict() for quick_reply in quick_replies]
 
 @quick_replies_router.get("/{reply_id}", response_model=QuickReplyResponse)
 async def get_quick_reply(
-    reply_id: UUID,
+    reply_id: int,
     tenant_slug: str,
     current_user: dict = Depends(get_current_user)
 ):
@@ -559,16 +564,16 @@ async def get_quick_reply(
         if not quick_reply:
             raise HTTPException(status_code=404, detail="Quick reply not found")
 
-        return quick_reply
+        return quick_reply.to_dict()
 
 @quick_replies_router.put("/{reply_id}", response_model=QuickReplyResponse)
 async def update_quick_reply(
-    reply_id: UUID,
+    reply_id: int,
     update_data: QuickReplyUpdate,
     tenant_slug: str,
     current_user: dict = Depends(get_current_user)
 ):
-    """List quick reply templates with filters"""
+    """Update a quick reply"""
     # Validate tenant access
     validate_tenant_access(current_user, tenant_slug)
 
@@ -598,16 +603,15 @@ async def update_quick_reply(
         db.commit()
         db.refresh(quick_reply)
 
-        # Convert to response model while still in session
-        return QuickReplyResponse.from_orm(quick_reply)
+        return quick_reply.to_dict()
 
 @quick_replies_router.delete("/{reply_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_quick_reply(
-    reply_id: UUID,
+    reply_id: int,
     tenant_slug: str,
     current_user: dict = Depends(get_current_user)
 ):
-    """Update a quick reply"""
+    """Delete a quick reply"""
     # Validate tenant access
     validate_tenant_access(current_user, tenant_slug)
 

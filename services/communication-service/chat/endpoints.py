@@ -87,12 +87,7 @@ async def create_channel(
         db.commit()
         db.refresh(channel)
 
-        # Add member count
-        channel.member_count = db.query(ChannelMember).filter(
-            ChannelMember.channel_id == channel.id
-        ).count()
-
-        return channel
+        return channel.to_dict()
 
 @channels_router.get("/", response_model=List[ChannelResponse])
 async def list_channels(
@@ -127,29 +122,25 @@ async def list_channels(
             query = query.filter(Channel.is_archived == is_archived)
 
         if search:
-            search_pattern = f"%{search}%"
+            search_term = f"%{search}%"
             query = query.filter(
                 or_(
-                    Channel.name.ilike(search_pattern),
-                    Channel.description.ilike(search_pattern)
+                    Channel.name.ilike(search_term),
+                    Channel.description.ilike(search_term)
                 )
             )
 
-        # Get results with pagination
+        # Order by channel name
+        query = query.order_by(Channel.name)
+
+        # Get results
         channels = query.offset(skip).limit(limit).all()
 
-        # Add member counts
-        for channel in channels:
-            channel.member_count = db.query(ChannelMember).filter(
-                ChannelMember.channel_id == channel.id,
-                ChannelMember.left_at.is_(None)
-            ).count()
-
-        return channels
+        return [channel.to_dict() for channel in channels]
 
 @channels_router.get("/{channel_id}", response_model=ChannelResponse)
 async def get_channel(
-    channel_id: UUID,
+    channel_id: int,
     tenant_slug: str,
     current_user: dict = Depends(get_current_user)
 ):
@@ -182,11 +173,11 @@ async def get_channel(
             ChannelMember.left_at.is_(None)
         ).count()
 
-        return channel
+        return channel.to_dict()
 
 @channels_router.put("/{channel_id}", response_model=ChannelResponse)
 async def update_channel(
-    channel_id: UUID,
+    channel_id: int,
     update_data: ChannelUpdate,
     tenant_slug: str,
     current_user: dict = Depends(get_current_user)
@@ -222,11 +213,11 @@ async def update_channel(
         db.commit()
         db.refresh(channel)
 
-        return channel
+        return channel.to_dict()
 
 @channels_router.delete("/{channel_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_channel(
-    channel_id: UUID,
+    channel_id: int,
     tenant_slug: str,
     current_user: dict = Depends(get_current_user)
 ):
@@ -354,12 +345,13 @@ async def list_channel_members(
         if not member:
             raise HTTPException(status_code=403, detail="Not a member of this channel")
 
+        # Get members
         members = db.query(ChannelMember).filter(
             ChannelMember.channel_id == channel_id,
             ChannelMember.left_at.is_(None)
         ).all()
 
-        return members
+        return [member.to_dict() for member in members]
 
 # ============================================
 # CHAT ENTRY ENDPOINTS

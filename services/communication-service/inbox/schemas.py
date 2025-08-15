@@ -7,62 +7,17 @@ from pydantic import BaseModel, Field, validator
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 from uuid import UUID
-from enum import Enum
+from common.enums import (
+    ChannelType,
+    ConversationStatus,
+    Priority,
+    MessageDirection,
+    MessageType,
+    MessageStatus
+)
 
 
-# ============================================
-# ENUMS
-# ============================================
-
-class ChannelTypeEnum(str, Enum):
-    whatsapp = "whatsapp"
-    messenger = "messenger"
-    instagram = "instagram"
-    email = "email"
-    web = "web"
-    twilio_whatsapp = "twilio_whatsapp"
-    twilio_call = "twilio_call"
-    whatsapp_business = "whatsapp_business"
-    facebook_messenger = "facebook_messenger"
-    personal_whatsapp = "personal_whatsapp"
-    gmail = "gmail"
-    zendesk = "zendesk"
-
-
-class ConversationStatusEnum(str, Enum):
-    new = "new"
-    open = "open"
-    replied = "replied"
-    qualified = "qualified"
-    archived = "archived"
-
-
-class PriorityEnum(str, Enum):
-    high = "high"
-    normal = "normal"
-    low = "low"
-
-
-class MessageDirectionEnum(str, Enum):
-    in_direction = "in"
-    out_direction = "out"
-
-
-class MessageTypeEnum(str, Enum):
-    text = "text"
-    image = "image"
-    document = "document"
-    audio = "audio"
-    video = "video"
-    location = "location"
-
-
-class MessageStatusEnum(str, Enum):
-    pending = "pending"
-    sent = "sent"
-    delivered = "delivered"
-    read = "read"
-    failed = "failed"
+# Note: Enums are now imported from common.enums
 
 
 # ============================================
@@ -71,12 +26,12 @@ class MessageStatusEnum(str, Enum):
 
 class ConversationBase(BaseModel):
     external_id: Optional[str] = Field(None, max_length=255)
-    channel: ChannelTypeEnum
+    channel: ChannelType
     contact_name: Optional[str] = Field(None, max_length=255)
     contact_identifier: str = Field(..., max_length=255)
     contact_metadata: Optional[Dict[str, Any]] = None
-    status: ConversationStatusEnum = ConversationStatusEnum.new
-    priority: PriorityEnum = PriorityEnum.normal
+    status: ConversationStatus = ConversationStatus.new
+    priority: Priority = Priority.normal
     tags: Optional[List[str]] = []
     platform_metadata: Optional[Dict[str, Any]] = {}
 
@@ -87,8 +42,8 @@ class ConversationCreate(ConversationBase):
 
 class ConversationUpdate(BaseModel):
     contact_name: Optional[str] = Field(None, max_length=255)
-    status: Optional[ConversationStatusEnum] = None
-    priority: Optional[PriorityEnum] = None
+    status: Optional[ConversationStatus] = None
+    priority: Optional[Priority] = None
     is_spam: Optional[bool] = None
     tags: Optional[List[str]] = None
     platform_metadata: Optional[Dict[str, Any]] = None
@@ -131,8 +86,8 @@ class ConversationResponse(ConversationBase):
 
 class MessageBase(BaseModel):
     external_id: Optional[str] = Field(None, max_length=255)
-    direction: MessageDirectionEnum
-    type: MessageTypeEnum = MessageTypeEnum.text
+    direction: MessageDirection
+    type: MessageType = MessageType.text
     content: Optional[str] = None
     media_url: Optional[str] = Field(None, max_length=500)
 
@@ -142,13 +97,13 @@ class MessageCreate(MessageBase):
 
 
 class MessageUpdate(BaseModel):
-    status: MessageStatusEnum
+    status: MessageStatus
 
 
 class MessageResponse(MessageBase):
     id: int
     conversation_id: int
-    status: MessageStatusEnum
+    status: MessageStatus
     status_updated_at: Optional[datetime]
     created_at: datetime
 
@@ -164,6 +119,8 @@ class QuickReplyBase(BaseModel):
     title: str = Field(..., max_length=100)
     content: str
     category: Optional[str] = Field(None, max_length=50)
+    language: Optional[str] = Field(None, max_length=10)
+    shortcuts: Optional[List[str]] = None
     is_active: bool = True
 
 
@@ -175,6 +132,8 @@ class QuickReplyUpdate(BaseModel):
     title: Optional[str] = Field(None, max_length=100)
     content: Optional[str] = None
     category: Optional[str] = Field(None, max_length=50)
+    language: Optional[str] = Field(None, max_length=10)
+    shortcuts: Optional[List[str]] = None
     is_active: Optional[bool] = None
 
 
@@ -210,7 +169,7 @@ class ConversationStats(BaseModel):
 # ============================================
 
 class IncomingWebhook(BaseModel):
-    channel: ChannelTypeEnum
+    channel: ChannelType
     external_id: Optional[str]
     from_number: Optional[str]
     from_email: Optional[str]
