@@ -4,14 +4,19 @@ Testing:
 1. Create a tenant with super_admin
 2. Authenticate tenant owner
 3. Test endpoints WITHOUT token (should fail)
-4. Test endpoints WITH token (should succeed)
+4. Test endpoints WITH token (should succeed with CRUD operations)
 5. Test cross-tenant access (should fail)
+
+Modules tested:
+- Users (users, roles, permissions, teams)
+- Settings (settings, audit logs)
+- Tools (notes, tasks, logcalls, events)
 """
 
 import httpx
 import asyncio
 from typing import Dict, Any, List, Optional
-from datetime import datetime
+from datetime import datetime, timedelta
 import uuid
 import json
 
@@ -35,6 +40,15 @@ class TestSystemSecurity:
         self.tenant_slug = None
         self.owner_token = None
         self.super_admin_token = None
+        # Store created IDs for cleanup
+        self.created_user_id = None
+        self.created_role_id = None
+        self.created_team_id = None
+        self.created_setting_id = None
+        self.created_note_id = None
+        self.created_task_id = None
+        self.created_logcall_id = None
+        self.created_event_id = None
 
     async def setup_tenant(self) -> Dict[str, Any]:
         """Create a new tenant for testing"""
@@ -50,481 +64,728 @@ class TestSystemSecurity:
                 data={
                     "username": SUPER_ADMIN_USERNAME,
                     "password": SUPER_ADMIN_PASSWORD
-                },
-                headers={"Content-Type": "application/x-www-form-urlencoded"}
+                }
             )
 
-            assert login_response.status_code == 200, f"Super admin login failed: {login_response.text}"
+            if login_response.status_code != 200:
+                print(f"❌ Failed to login as super_admin: {login_response.status_code}")
+                return {"success": False}
+
             auth_data = login_response.json()
             self.super_admin_token = auth_data["access_token"]
-            print(f"✅ Super admin logged in successfully")
+            print("✅ Super admin logged in successfully")
 
             # Create tenant
             print("\n[2] Creating test tenant...")
-            unique_id = uuid.uuid4().hex[:8]
-            self.tenant_data = {
-                "name": f"Test System Company {unique_id}",
-                "slug": f"test-sys-{unique_id}",
-                "subdomain": f"test-sys-{unique_id}",
-                "owner_email": f"owner_{unique_id}@testsys.com",
-                "owner_username": f"owner_sys_{unique_id}",
-                "owner_password": "OwnerPassword123!",
-                "owner_first_name": "Test",
-                "owner_last_name": "Owner",
-                "subscription_plan": "professional",
-                "max_users": 50,
-                "settings": {
-                    "theme": "default",
-                    "timezone": "UTC"
-                }
-            }
-
-            headers = {
-                "Authorization": f"Bearer {self.super_admin_token}",
-                "Content-Type": "application/json"
-            }
+            unique_id = str(uuid.uuid4())[:8]
+            self.tenant_slug = f"test-sys-{unique_id}"
 
             tenant_response = await client.post(
-                f"{TENANT_SERVICE_URL}/api/v1/tenants/v2",
-                json=self.tenant_data,
-                headers=headers
+                f"{TENANT_SERVICE_URL}/api/v1/tenants/",
+                headers={"Authorization": f"Bearer {self.super_admin_token}"},
+                json={
+                    "slug": self.tenant_slug,
+                    "name": f"Test System Tenant {unique_id}",
+                    "owner_email": f"owner_sys_{unique_id}@test.com",
+                    "owner_name": f"Owner Sys {unique_id}",
+                    "owner_username": f"owner_sys_{unique_id}",
+                    "owner_password": "OwnerPass123!",
+                    "domain": f"test-sys-{unique_id}.local",
+                    "settings": {
+                        "timezone": "UTC",
+                        "language": "en",
+                        "currency": "USD"
+                    }
+                }
             )
 
-            self.tenant_slug = self.tenant_data["slug"]  # Always set from data
+            if tenant_response.status_code != 201:
+                print(f"❌ Failed to create tenant: {tenant_response.status_code}")
+                print(f"   Response: {tenant_response.text}")
+                return {"success": False}
 
-            if tenant_response.status_code in [200, 201]:
-                tenant_result = tenant_response.json()
-                if "tenant" in tenant_result:
-                    self.tenant_id = tenant_result["tenant"]["id"]
-                print(f"✅ Tenant created: {self.tenant_slug}")
-            elif tenant_response.status_code == 500:
-                # Partial success - tenant created but schema initialization pending
-                self.tenant_slug = self.tenant_data["slug"]
-                print(f"✅ Tenant record created: {self.tenant_slug}")
-                print(f"⚠️  Schema initialization may be pending")
-            else:
-                raise Exception(f"Failed to create tenant: {tenant_response.status_code} - {tenant_response.text}")
+            self.tenant_data = tenant_response.json()
+            self.tenant_id = self.tenant_data["id"]
+            print(f"✅ Tenant created: {self.tenant_slug}")
 
-            return self.tenant_data
+            return {"success": True}
 
-    async def authenticate_tenant_owner(self) -> Optional[str]:
-        """Authenticate as the tenant owner"""
+    async def authenticate_owner(self) -> bool:
+        """Authenticate as tenant owner"""
         async with httpx.AsyncClient(timeout=30.0) as client:
             print("\n" + "="*60)
             print("AUTHENTICATION: Tenant Owner Login")
             print("="*60)
 
-            # Try tenant-specific login first
             print(f"\n[1] Attempting tenant-specific login for {self.tenant_slug}...")
 
-            # Get tenant ID first if we don't have it
-            if not self.tenant_id:
-                headers = {
-                    "Authorization": f"Bearer {self.super_admin_token}",
-                    "Content-Type": "application/json"
-                }
-                tenants_response = await client.get(
-                    f"{TENANT_SERVICE_URL}/api/v1/tenants",
-                    headers=headers
-                )
-                if tenants_response.status_code == 200:
-                    tenants = tenants_response.json()
-                    for tenant in tenants:
-                        if tenant.get("slug") == self.tenant_slug:
-                            self.tenant_id = tenant.get("id")
-                            break
-
-            if self.tenant_id:
-                # Try system-service tenant login
-                login_data = {
-                    "email": self.tenant_data["owner_email"],
-                    "password": self.tenant_data["owner_password"],
-                    "tenant_id": self.tenant_id
-                }
-
-                tenant_login_response = await client.post(
-                    f"{SYSTEM_SERVICE_URL}/api/v1/auth/tenant/login",
-                    json=login_data,
-                    headers={
-                        "Content-Type": "application/json",
-                        "X-Tenant-ID": self.tenant_id
+            # Try tenant-specific login endpoint first
+            try:
+                login_response = await client.post(
+                    f"{SYSTEM_SERVICE_URL}/api/v1/auth/tenant-login",
+                    headers={"X-Tenant-ID": self.tenant_id},
+                    json={
+                        "email": f"owner_sys_{self.tenant_slug[9:]}@test.com",
+                        "password": "OwnerPass123!",
+                        "tenant_id": self.tenant_id
                     }
                 )
 
-                if tenant_login_response.status_code == 200:
-                    auth_data = tenant_login_response.json()
+                if login_response.status_code == 200:
+                    auth_data = login_response.json()
                     self.owner_token = auth_data["access_token"]
-                    print(f"✅ Tenant owner authenticated successfully via system-service")
-                    return self.owner_token
-                else:
-                    print(f"⚠️  Tenant login failed: {tenant_login_response.status_code}")
+                    print("✅ Tenant owner authenticated successfully")
+                    return True
+            except Exception as e:
+                print(f"   Tenant login failed: {e}")
 
-            # Fallback to regular auth service login with tenant header
-            print(f"\n[2] Fallback: Trying auth-service login with tenant header...")
-            headers = {
-                "Content-Type": "application/x-www-form-urlencoded"
-            }
-            if self.tenant_slug:
-                headers["X-Tenant-Slug"] = self.tenant_slug
-
+            # Fallback to auth-service login
+            print("\n[2] Fallback: Trying auth-service login with tenant header...")
             login_response = await client.post(
                 f"{AUTH_SERVICE_URL}/api/v1/auth/login",
+                headers={"X-Tenant-ID": self.tenant_id},
                 data={
-                    "username": self.tenant_data["owner_username"],
-                    "password": self.tenant_data["owner_password"]
-                },
-                headers=headers
+                    "username": f"owner_sys_{self.tenant_slug[9:]}",
+                    "password": "OwnerPass123!"
+                }
             )
 
             if login_response.status_code == 200:
                 auth_data = login_response.json()
                 self.owner_token = auth_data["access_token"]
-                print(f"✅ Tenant owner authenticated successfully via auth-service")
-                return self.owner_token
-            else:
-                print(f"⚠️  Owner authentication failed: {login_response.status_code}")
-                print(f"   This is expected if tenant schema is not fully initialized")
-                return None
+                print("✅ Tenant owner authenticated successfully via auth-service")
+                return True
 
-    async def test_endpoints_without_token(self):
-        """Test system endpoints WITHOUT authentication token"""
+            print(f"❌ Failed to authenticate owner: {login_response.status_code}")
+            print(f"   Response: {login_response.text}")
+            return False
+
+    async def test_without_auth(self) -> Dict[str, Any]:
+        """Test endpoints without authentication (should fail)"""
+        results = {"passed": 0, "failed": 0, "details": []}
+
         async with httpx.AsyncClient(timeout=30.0) as client:
             print("\n" + "="*60)
             print("TEST: System Endpoints WITHOUT Token")
             print("="*60)
 
-            test_results = []
-
-            # Test 1: Get service health (should work without auth)
+            # Test public endpoints
             print("\n[1] Testing GET /health (public endpoint)")
             response = await client.get(f"{SYSTEM_SERVICE_URL}/health")
             if response.status_code == 200:
-                print(f"✅ Health check accessible without token")
-                test_results.append(("GET /health", "PASS"))
+                print("✅ Health check accessible without token")
+                results["passed"] += 1
+                results["details"].append(("GET /health", "PASS"))
             else:
                 print(f"❌ Health check failed: {response.status_code}")
-                test_results.append(("GET /health", "FAIL"))
+                results["failed"] += 1
+                results["details"].append(("GET /health", "FAIL"))
 
-            # Test 2: Get service info (should work without auth)
             print("\n[2] Testing GET / (public endpoint)")
             response = await client.get(f"{SYSTEM_SERVICE_URL}/")
             if response.status_code == 200:
-                print(f"✅ Root endpoint accessible without token")
-                test_results.append(("GET /", "PASS"))
+                print("✅ Root endpoint accessible without token")
+                results["passed"] += 1
+                results["details"].append(("GET /", "PASS"))
             else:
                 print(f"❌ Root endpoint failed: {response.status_code}")
-                test_results.append(("GET /", "FAIL"))
+                results["failed"] += 1
+                results["details"].append(("GET /", "FAIL"))
 
-            # Test 3: Get users list (should fail without auth)
-            print(f"\n[3] Testing GET /api/v1/tenants/{self.tenant_slug}/users/ (protected)")
+            # Test protected endpoints (should fail)
+            protected_tests = [
+                ("GET", f"/api/v1/tenants/{self.tenant_slug}/users/", "users list"),
+                ("POST", f"/api/v1/tenants/{self.tenant_slug}/users/", "create user"),
+                ("GET", f"/api/v1/tenants/{self.tenant_slug}/roles/", "roles list"),
+                ("POST", f"/api/v1/tenants/{self.tenant_slug}/roles/", "create role"),
+                ("GET", f"/api/v1/tenants/{self.tenant_slug}/teams/", "teams list"),
+                ("POST", f"/api/v1/tenants/{self.tenant_slug}/teams/", "create team"),
+                ("GET", f"/api/v1/tenants/{self.tenant_slug}/settings/", "settings list"),
+                ("POST", f"/api/v1/tenants/{self.tenant_slug}/settings/", "create setting"),
+                ("GET", f"/api/v1/tenants/{self.tenant_slug}/audit-logs/", "audit logs"),
+                ("GET", f"/api/v1/tenants/{self.tenant_slug}/tools/notes", "notes list"),
+                ("POST", f"/api/v1/tenants/{self.tenant_slug}/tools/notes", "create note"),
+                ("GET", f"/api/v1/tenants/{self.tenant_slug}/tools/tasks", "tasks list"),
+                ("POST", f"/api/v1/tenants/{self.tenant_slug}/tools/tasks", "create task"),
+                ("GET", f"/api/v1/tenants/{self.tenant_slug}/tools/logcalls", "logcalls list"),
+                ("POST", f"/api/v1/tenants/{self.tenant_slug}/tools/logcalls", "create logcall"),
+                ("GET", f"/api/v1/tenants/{self.tenant_slug}/tools/events", "events list"),
+                ("POST", f"/api/v1/tenants/{self.tenant_slug}/tools/events", "create event"),
+            ]
+
+            for i, (method, endpoint, description) in enumerate(protected_tests, 3):
+                print(f"\n[{i}] Testing {method} {endpoint.split('/tenants/')[1]} ({description})")
+
+                if method == "GET":
+                    response = await client.get(f"{SYSTEM_SERVICE_URL}{endpoint}")
+                else:  # POST
+                    response = await client.post(f"{SYSTEM_SERVICE_URL}{endpoint}", json={})
+
+                if response.status_code in [401, 403]:
+                    print(f"✅ {description.capitalize()} correctly rejected request (status: {response.status_code})")
+                    results["passed"] += 1
+                    results["details"].append((f"{method} {description}", "PASS"))
+                else:
+                    print(f"❌ {description.capitalize()} did not reject: {response.status_code}")
+                    results["failed"] += 1
+                    results["details"].append((f"{method} {description}", "FAIL"))
+
+        return results
+
+    async def test_users_crud(self, client: httpx.AsyncClient) -> Dict[str, Any]:
+        """Test CRUD operations for Users module"""
+        results = {"passed": 0, "failed": 0, "skipped": 0}
+        headers = {"Authorization": f"Bearer {self.owner_token}"}
+
+        print("\n--- Users Module CRUD ---")
+
+        # CREATE User
+        print("\n[1] CREATE User")
+        user_data = {
+            "email": f"test_user_{uuid.uuid4().hex[:8]}@test.com",
+            "username": f"test_user_{uuid.uuid4().hex[:8]}",
+            "password": "TestUser123!",
+            "first_name": "Test",
+            "last_name": "User",
+            "department": "Engineering",
+            "title": "Developer",
+            "timezone": "UTC",
+            "language": "en",
+            "currency": "USD"
+        }
+
+        response = await client.post(
+            f"{SYSTEM_SERVICE_URL}/api/v1/tenants/{self.tenant_slug}/users/",
+            headers=headers,
+            json=user_data
+        )
+
+        if response.status_code == 201:
+            user = response.json()
+            self.created_user_id = user["id"]
+            print(f"✅ User created: {self.created_user_id}")
+            results["passed"] += 1
+        else:
+            print(f"❌ Failed to create user: {response.status_code}")
+            results["failed"] += 1
+            return results
+
+        # READ User (List)
+        print("\n[2] READ Users (List)")
+        response = await client.get(
+            f"{SYSTEM_SERVICE_URL}/api/v1/tenants/{self.tenant_slug}/users/",
+            headers=headers
+        )
+
+        if response.status_code == 200:
+            users = response.json()
+            print(f"✅ Retrieved {len(users)} users")
+            results["passed"] += 1
+        elif response.status_code == 404:
+            print(f"⚠️  Users list returned 404 - schema may not be initialized")
+            results["skipped"] += 1
+        else:
+            print(f"❌ Failed to list users: {response.status_code}")
+            results["failed"] += 1
+
+        # READ User (Single)
+        if self.created_user_id:
+            print("\n[3] READ User (Single)")
             response = await client.get(
-                f"{SYSTEM_SERVICE_URL}/api/v1/tenants/{self.tenant_slug}/users/"
-            )
-            if response.status_code in [401, 403]:
-                print(f"✅ Protected endpoint correctly rejected request (status: {response.status_code})")
-                test_results.append(("GET /users without auth", "PASS"))
-            else:
-                print(f"❌ Protected endpoint should reject unauthenticated request but got: {response.status_code}")
-                test_results.append(("GET /users without auth", "FAIL"))
-
-            # Test 4: Create user (should fail without auth)
-            print(f"\n[4] Testing POST /api/v1/tenants/{self.tenant_slug}/users/ (protected)")
-            user_data = {
-                "email": f"test_{uuid.uuid4().hex[:8]}@example.com",
-                "username": f"test_{uuid.uuid4().hex[:8]}",
-                "password": "TestPassword123!",
-                "confirm_password": "TestPassword123!",
-                "first_name": "Test",
-                "last_name": "User"
-            }
-            response = await client.post(
-                f"{SYSTEM_SERVICE_URL}/api/v1/tenants/{self.tenant_slug}/users/",
-                json=user_data
-            )
-            if response.status_code in [401, 403]:
-                print(f"✅ Create user correctly rejected without auth (status: {response.status_code})")
-                test_results.append(("POST /users without auth", "PASS"))
-            else:
-                print(f"❌ Create should require authentication but got: {response.status_code}")
-                test_results.append(("POST /users without auth", "FAIL"))
-
-            # Test 5: Get settings (should fail without auth)
-            print(f"\n[5] Testing GET /api/v1/tenants/{self.tenant_slug}/settings/ (protected)")
-            response = await client.get(
-                f"{SYSTEM_SERVICE_URL}/api/v1/tenants/{self.tenant_slug}/settings/"
-            )
-            if response.status_code in [401, 403]:
-                print(f"✅ Settings endpoint correctly rejected request (status: {response.status_code})")
-                test_results.append(("GET /settings without auth", "PASS"))
-            else:
-                print(f"❌ Settings should require authentication but got: {response.status_code}")
-                test_results.append(("GET /settings without auth", "FAIL"))
-
-            # Test 6: Get tools/notes (should fail without auth)
-            print(f"\n[6] Testing GET /api/v1/tenants/{self.tenant_slug}/tools/notes (protected)")
-            response = await client.get(
-                f"{SYSTEM_SERVICE_URL}/api/v1/tenants/{self.tenant_slug}/tools/notes"
-            )
-            if response.status_code in [401, 403]:
-                print(f"✅ Notes endpoint correctly rejected request (status: {response.status_code})")
-                test_results.append(("GET /tools/notes without auth", "PASS"))
-            else:
-                print(f"❌ Notes should require authentication but got: {response.status_code}")
-                test_results.append(("GET /tools/notes without auth", "FAIL"))
-
-            return test_results
-
-    async def test_endpoints_with_token(self):
-        """Test system endpoints WITH authentication token"""
-        if not self.owner_token:
-            print("\n⚠️  Skipping authenticated tests - no valid token available")
-            return []
-
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            print("\n" + "="*60)
-            print("TEST: System Endpoints WITH Token")
-            print("="*60)
-
-            test_results = []
-            headers = {
-                "Authorization": f"Bearer {self.owner_token}",
-                "Content-Type": "application/json"
-            }
-
-            # Test 1: Get users list
-            print(f"\n[1] Testing GET /api/v1/tenants/{self.tenant_slug}/users/ with token")
-            response = await client.get(
-                f"{SYSTEM_SERVICE_URL}/api/v1/tenants/{self.tenant_slug}/users/",
+                f"{SYSTEM_SERVICE_URL}/api/v1/tenants/{self.tenant_slug}/users/{self.created_user_id}",
                 headers=headers
             )
+
             if response.status_code == 200:
-                print(f"✅ Successfully retrieved users")
-                users = response.json()
-                print(f"   Found {len(users) if isinstance(users, list) else 'some'} users")
-                test_results.append(("GET /users with auth", "PASS"))
-            elif response.status_code == 500:
-                print(f"⚠️  Server error - likely schema not initialized")
-                test_results.append(("GET /users with auth", "SKIP"))
+                print(f"✅ Retrieved user details")
+                results["passed"] += 1
             else:
-                print(f"❌ Failed to get users: {response.status_code}")
-                test_results.append(("GET /users with auth", "FAIL"))
+                print(f"❌ Failed to get user: {response.status_code}")
+                results["failed"] += 1
 
-            # Test 2: Create a user
-            print(f"\n[2] Testing POST /api/v1/tenants/{self.tenant_slug}/users/ with auth")
-            user_data = {
-                "email": f"test_{uuid.uuid4().hex[:8]}@example.com",
-                "username": f"test_{uuid.uuid4().hex[:8]}",
-                "password": "TestPassword123!",
-                "confirm_password": "TestPassword123!",
-                "first_name": "Test",
-                "last_name": "User",
-                "role": "user"
+        # UPDATE User
+        if self.created_user_id:
+            print("\n[4] UPDATE User")
+            update_data = {
+                "title": "Senior Developer",
+                "department": "R&D"
             }
-            response = await client.post(
-                f"{SYSTEM_SERVICE_URL}/api/v1/tenants/{self.tenant_slug}/users/",
-                json=user_data,
-                headers=headers
-            )
-            if response.status_code in [200, 201]:
-                print(f"✅ Successfully created user")
-                created = response.json()
-                user_id = created.get("id", "unknown")
-                print(f"   User ID: {user_id}")
-                test_results.append(("POST /users with auth", "PASS"))
-            elif response.status_code == 500:
-                print(f"⚠️  Server error - likely schema not initialized")
-                test_results.append(("POST /users with auth", "SKIP"))
-            else:
-                print(f"❌ Failed to create user: {response.status_code}")
-                test_results.append(("POST /users with auth", "FAIL"))
 
-            # Test 3: Get settings
-            print(f"\n[3] Testing GET /api/v1/tenants/{self.tenant_slug}/settings/ with auth")
-            response = await client.get(
-                f"{SYSTEM_SERVICE_URL}/api/v1/tenants/{self.tenant_slug}/settings/",
-                headers=headers
+            response = await client.put(
+                f"{SYSTEM_SERVICE_URL}/api/v1/tenants/{self.tenant_slug}/users/{self.created_user_id}",
+                headers=headers,
+                json=update_data
             )
+
             if response.status_code == 200:
-                print(f"✅ Successfully retrieved settings")
-                settings = response.json()
-                print(f"   Found {len(settings) if isinstance(settings, list) else 'some'} settings")
-                test_results.append(("GET /settings with auth", "PASS"))
-            elif response.status_code == 500:
-                print(f"⚠️  Server error - likely schema not initialized")
-                test_results.append(("GET /settings with auth", "SKIP"))
+                print(f"✅ User updated")
+                results["passed"] += 1
             else:
-                print(f"❌ Failed to get settings: {response.status_code}")
-                test_results.append(("GET /settings with auth", "FAIL"))
+                print(f"❌ Failed to update user: {response.status_code}")
+                results["failed"] += 1
 
-            # Test 4: Create a setting
-            print(f"\n[4] Testing POST /api/v1/tenants/{self.tenant_slug}/settings/ with auth")
-            setting_data = {
-                "category": "general",
-                "key": f"test_key_{uuid.uuid4().hex[:8]}",
-                "value": "test_value",
-                "value_type": "string",
-                "description": "Test setting"
+        # DELETE User
+        if self.created_user_id:
+            print("\n[5] DELETE User")
+            response = await client.delete(
+                f"{SYSTEM_SERVICE_URL}/api/v1/tenants/{self.tenant_slug}/users/{self.created_user_id}",
+                headers=headers
+            )
+
+            if response.status_code in [204, 200]:
+                print(f"✅ User deleted")
+                results["passed"] += 1
+            else:
+                print(f"❌ Failed to delete user: {response.status_code}")
+                results["failed"] += 1
+
+        return results
+
+    async def test_roles_crud(self, client: httpx.AsyncClient) -> Dict[str, Any]:
+        """Test CRUD operations for Roles"""
+        results = {"passed": 0, "failed": 0, "skipped": 0}
+        headers = {"Authorization": f"Bearer {self.owner_token}"}
+
+        print("\n--- Roles CRUD ---")
+
+        # CREATE Role
+        print("\n[1] CREATE Role")
+        role_data = {
+            "name": f"test_role_{uuid.uuid4().hex[:8]}",
+            "display_name": "Test Role",
+            "description": "A test role for security testing",
+            "priority": 50
+        }
+
+        response = await client.post(
+            f"{SYSTEM_SERVICE_URL}/api/v1/tenants/{self.tenant_slug}/roles/",
+            headers=headers,
+            json=role_data
+        )
+
+        if response.status_code == 201:
+            role = response.json()
+            self.created_role_id = role["id"]
+            print(f"✅ Role created: {self.created_role_id}")
+            results["passed"] += 1
+        else:
+            print(f"❌ Failed to create role: {response.status_code}")
+            results["failed"] += 1
+
+        # READ Roles
+        print("\n[2] READ Roles")
+        response = await client.get(
+            f"{SYSTEM_SERVICE_URL}/api/v1/tenants/{self.tenant_slug}/roles/",
+            headers=headers
+        )
+
+        if response.status_code == 200:
+            roles = response.json()
+            print(f"✅ Retrieved {len(roles)} roles")
+            results["passed"] += 1
+        else:
+            print(f"❌ Failed to list roles: {response.status_code}")
+            results["failed"] += 1
+
+        return results
+
+    async def test_teams_crud(self, client: httpx.AsyncClient) -> Dict[str, Any]:
+        """Test CRUD operations for Teams"""
+        results = {"passed": 0, "failed": 0, "skipped": 0}
+        headers = {"Authorization": f"Bearer {self.owner_token}"}
+
+        print("\n--- Teams CRUD ---")
+
+        # CREATE Team
+        print("\n[1] CREATE Team")
+        team_data = {
+            "name": f"test_team_{uuid.uuid4().hex[:8]}",
+            "display_name": "Test Team",
+            "description": "A test team for security testing"
+        }
+
+        response = await client.post(
+            f"{SYSTEM_SERVICE_URL}/api/v1/tenants/{self.tenant_slug}/teams/",
+            headers=headers,
+            json=team_data
+        )
+
+        if response.status_code == 201:
+            team = response.json()
+            self.created_team_id = team["id"]
+            print(f"✅ Team created: {self.created_team_id}")
+            results["passed"] += 1
+        else:
+            print(f"❌ Failed to create team: {response.status_code}")
+            results["failed"] += 1
+
+        # READ Teams
+        print("\n[2] READ Teams")
+        response = await client.get(
+            f"{SYSTEM_SERVICE_URL}/api/v1/tenants/{self.tenant_slug}/teams/",
+            headers=headers
+        )
+
+        if response.status_code == 200:
+            teams = response.json()
+            print(f"✅ Retrieved {len(teams)} teams")
+            results["passed"] += 1
+        else:
+            print(f"❌ Failed to list teams: {response.status_code}")
+            results["failed"] += 1
+
+        return results
+
+    async def test_settings_crud(self, client: httpx.AsyncClient) -> Dict[str, Any]:
+        """Test CRUD operations for Settings module"""
+        results = {"passed": 0, "failed": 0, "skipped": 0}
+        headers = {"Authorization": f"Bearer {self.owner_token}"}
+
+        print("\n--- Settings Module CRUD ---")
+
+        # CREATE Setting
+        print("\n[1] CREATE Setting")
+        setting_data = {
+            "category": "test",
+            "key": f"test_key_{uuid.uuid4().hex[:8]}",
+            "value": "test_value",
+            "value_type": "string",
+            "description": "Test setting",
+            "is_sensitive": False
+        }
+
+        response = await client.post(
+            f"{SYSTEM_SERVICE_URL}/api/v1/tenants/{self.tenant_slug}/settings/",
+            headers=headers,
+            json=setting_data
+        )
+
+        if response.status_code == 201:
+            setting = response.json()
+            self.created_setting_id = setting["id"]
+            print(f"✅ Setting created: {self.created_setting_id}")
+            results["passed"] += 1
+        else:
+            print(f"❌ Failed to create setting: {response.status_code}")
+            results["failed"] += 1
+
+        # READ Settings
+        print("\n[2] READ Settings")
+        response = await client.get(
+            f"{SYSTEM_SERVICE_URL}/api/v1/tenants/{self.tenant_slug}/settings/",
+            headers=headers
+        )
+
+        if response.status_code == 200:
+            settings = response.json()
+            print(f"✅ Retrieved {len(settings)} settings")
+            results["passed"] += 1
+        else:
+            print(f"❌ Failed to list settings: {response.status_code}")
+            results["failed"] += 1
+
+        # READ Setting (by category)
+        print("\n[3] READ Settings by Category")
+        response = await client.get(
+            f"{SYSTEM_SERVICE_URL}/api/v1/tenants/{self.tenant_slug}/settings/category/test",
+            headers=headers
+        )
+
+        if response.status_code == 200:
+            settings = response.json()
+            print(f"✅ Retrieved {len(settings)} settings in 'test' category")
+            results["passed"] += 1
+        else:
+            print(f"❌ Failed to get settings by category: {response.status_code}")
+            results["failed"] += 1
+
+        # UPDATE Setting
+        if self.created_setting_id:
+            print("\n[4] UPDATE Setting")
+            update_data = {
+                "value": "updated_test_value",
+                "description": "Updated test setting"
             }
-            response = await client.post(
-                f"{SYSTEM_SERVICE_URL}/api/v1/tenants/{self.tenant_slug}/settings/",
-                json=setting_data,
-                headers=headers
-            )
-            if response.status_code in [200, 201]:
-                print(f"✅ Successfully created setting")
-                test_results.append(("POST /settings with auth", "PASS"))
-            elif response.status_code == 500:
-                print(f"⚠️  Server error - likely schema not initialized")
-                test_results.append(("POST /settings with auth", "SKIP"))
-            else:
-                print(f"❌ Failed to create setting: {response.status_code}")
-                test_results.append(("POST /settings with auth", "FAIL"))
 
-            # Test 5: Get notes
-            print(f"\n[5] Testing GET /api/v1/tenants/{self.tenant_slug}/tools/notes with auth")
-            response = await client.get(
-                f"{SYSTEM_SERVICE_URL}/api/v1/tenants/{self.tenant_slug}/tools/notes",
-                headers=headers
+            response = await client.put(
+                f"{SYSTEM_SERVICE_URL}/api/v1/tenants/{self.tenant_slug}/settings/{self.created_setting_id}",
+                headers=headers,
+                json=update_data
             )
+
             if response.status_code == 200:
-                print(f"✅ Successfully retrieved notes")
-                notes = response.json()
-                print(f"   Found {len(notes) if isinstance(notes, list) else 'some'} notes")
-                test_results.append(("GET /tools/notes with auth", "PASS"))
-            elif response.status_code == 500:
-                print(f"⚠️  Server error - likely schema not initialized")
-                test_results.append(("GET /tools/notes with auth", "SKIP"))
+                print(f"✅ Setting updated")
+                results["passed"] += 1
             else:
-                print(f"❌ Failed to get notes: {response.status_code}")
-                test_results.append(("GET /tools/notes with auth", "FAIL"))
+                print(f"❌ Failed to update setting: {response.status_code}")
+                results["failed"] += 1
 
-            return test_results
+        # DELETE Setting
+        if self.created_setting_id:
+            print("\n[5] DELETE Setting")
+            response = await client.delete(
+                f"{SYSTEM_SERVICE_URL}/api/v1/tenants/{self.tenant_slug}/settings/{self.created_setting_id}",
+                headers=headers
+            )
 
-    async def test_cross_tenant_access(self):
-        """Test that users cannot access other tenants' data"""
-        if not self.owner_token:
-            print("\n⚠️  Skipping cross-tenant tests - no valid token available")
-            return []
+            if response.status_code in [204, 200]:
+                print(f"✅ Setting deleted")
+                results["passed"] += 1
+            else:
+                print(f"❌ Failed to delete setting: {response.status_code}")
+                results["failed"] += 1
 
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            print("\n" + "="*60)
-            print("TEST: Cross-Tenant Access Prevention")
-            print("="*60)
+        # READ Audit Logs
+        print("\n[6] READ Audit Logs")
+        response = await client.get(
+            f"{SYSTEM_SERVICE_URL}/api/v1/tenants/{self.tenant_slug}/audit-logs/",
+            headers=headers
+        )
 
-            test_results = []
+        if response.status_code == 200:
+            logs = response.json()
+            print(f"✅ Retrieved {len(logs)} audit logs")
+            results["passed"] += 1
+        else:
+            print(f"❌ Failed to list audit logs: {response.status_code}")
+            results["failed"] += 1
 
-            # Use owner token but try to access different tenant
-            fake_tenant_slug = "non-existent-tenant-xyz"
-            headers = {
-                "Authorization": f"Bearer {self.owner_token}",
-                "Content-Type": "application/json"
+        return results
+
+    async def test_tools_crud(self, client: httpx.AsyncClient) -> Dict[str, Any]:
+        """Test CRUD operations for Tools module"""
+        results = {"passed": 0, "failed": 0, "skipped": 0}
+        headers = {"Authorization": f"Bearer {self.owner_token}"}
+
+        print("\n--- Tools Module CRUD ---")
+
+        # Notes CRUD
+        print("\n-- Notes --")
+
+        # CREATE Note
+        print("[1] CREATE Note")
+        note_data = {
+            "title": "Test Note",
+            "content": "This is a test note content",
+            "priority": "medium"
+        }
+
+        response = await client.post(
+            f"{SYSTEM_SERVICE_URL}/api/v1/tenants/{self.tenant_slug}/tools/notes",
+            headers=headers,
+            json=note_data
+        )
+
+        if response.status_code == 201:
+            note = response.json()
+            self.created_note_id = note["id"]
+            print(f"✅ Note created: {self.created_note_id}")
+            results["passed"] += 1
+        else:
+            print(f"❌ Failed to create note: {response.status_code}")
+            results["failed"] += 1
+
+        # READ Notes
+        print("[2] READ Notes")
+        response = await client.get(
+            f"{SYSTEM_SERVICE_URL}/api/v1/tenants/{self.tenant_slug}/tools/notes",
+            headers=headers
+        )
+
+        if response.status_code == 200:
+            notes = response.json()
+            print(f"✅ Retrieved {len(notes)} notes")
+            results["passed"] += 1
+        else:
+            print(f"❌ Failed to list notes: {response.status_code}")
+            results["failed"] += 1
+
+        # UPDATE Note
+        if self.created_note_id:
+            print("[3] UPDATE Note")
+            update_data = {
+                "title": "Updated Test Note",
+                "content": "Updated content"
             }
 
-            print(f"\n[1] Testing access to different tenant: {fake_tenant_slug}")
+            response = await client.put(
+                f"{SYSTEM_SERVICE_URL}/api/v1/tenants/{self.tenant_slug}/tools/notes/{self.created_note_id}",
+                headers=headers,
+                json=update_data
+            )
 
-            # Test 1: Try to get users from different tenant
-            response = await client.get(
-                f"{SYSTEM_SERVICE_URL}/api/v1/tenants/{fake_tenant_slug}/users/",
+            if response.status_code == 200:
+                print(f"✅ Note updated")
+                results["passed"] += 1
+            else:
+                print(f"❌ Failed to update note: {response.status_code}")
+                results["failed"] += 1
+
+        # DELETE Note
+        if self.created_note_id:
+            print("[4] DELETE Note")
+            response = await client.delete(
+                f"{SYSTEM_SERVICE_URL}/api/v1/tenants/{self.tenant_slug}/tools/notes/{self.created_note_id}",
                 headers=headers
             )
-            if response.status_code in [403, 404]:
-                print(f"✅ Correctly denied access to different tenant's users (status: {response.status_code})")
-                test_results.append(("Cross-tenant users access", "PASS"))
-            else:
-                print(f"❌ Should deny cross-tenant access but got: {response.status_code}")
-                test_results.append(("Cross-tenant users access", "FAIL"))
 
-            # Test 2: Try to get settings from different tenant
-            print(f"\n[2] Testing settings access with wrong tenant")
-            response = await client.get(
-                f"{SYSTEM_SERVICE_URL}/api/v1/tenants/{fake_tenant_slug}/settings/",
+            if response.status_code in [204, 200]:
+                print(f"✅ Note deleted")
+                results["passed"] += 1
+            else:
+                print(f"❌ Failed to delete note: {response.status_code}")
+                results["failed"] += 1
+
+        # Tasks CRUD
+        print("\n-- Tasks --")
+
+        # CREATE Task
+        print("[1] CREATE Task")
+        task_data = {
+            "title": "Test Task",
+            "description": "This is a test task",
+            "status": "pending",
+            "priority": "high",
+            "due_date": (datetime.now() + timedelta(days=7)).isoformat()
+        }
+
+        response = await client.post(
+            f"{SYSTEM_SERVICE_URL}/api/v1/tenants/{self.tenant_slug}/tools/tasks",
+            headers=headers,
+            json=task_data
+        )
+
+        if response.status_code == 201:
+            task = response.json()
+            self.created_task_id = task["id"]
+            print(f"✅ Task created: {self.created_task_id}")
+            results["passed"] += 1
+        else:
+            print(f"❌ Failed to create task: {response.status_code}")
+            results["failed"] += 1
+
+        # READ Tasks
+        print("[2] READ Tasks")
+        response = await client.get(
+            f"{SYSTEM_SERVICE_URL}/api/v1/tenants/{self.tenant_slug}/tools/tasks",
+            headers=headers
+        )
+
+        if response.status_code == 200:
+            tasks = response.json()
+            print(f"✅ Retrieved {len(tasks)} tasks")
+            results["passed"] += 1
+        else:
+            print(f"❌ Failed to list tasks: {response.status_code}")
+            results["failed"] += 1
+
+        # UPDATE Task
+        if self.created_task_id:
+            print("[3] UPDATE Task")
+            update_data = {
+                "status": "in_progress",
+                "description": "Updated task description"
+            }
+
+            response = await client.put(
+                f"{SYSTEM_SERVICE_URL}/api/v1/tenants/{self.tenant_slug}/tools/tasks/{self.created_task_id}",
+                headers=headers,
+                json=update_data
+            )
+
+            if response.status_code == 200:
+                print(f"✅ Task updated")
+                results["passed"] += 1
+            else:
+                print(f"❌ Failed to update task: {response.status_code}")
+                results["failed"] += 1
+
+        # DELETE Task
+        if self.created_task_id:
+            print("[4] DELETE Task")
+            response = await client.delete(
+                f"{SYSTEM_SERVICE_URL}/api/v1/tenants/{self.tenant_slug}/tools/tasks/{self.created_task_id}",
                 headers=headers
             )
-            if response.status_code in [403, 404]:
-                print(f"✅ Correctly denied settings access to wrong tenant (status: {response.status_code})")
-                test_results.append(("Cross-tenant settings access", "PASS"))
+
+            if response.status_code in [204, 200]:
+                print(f"✅ Task deleted")
+                results["passed"] += 1
             else:
-                print(f"❌ Should deny access but got: {response.status_code}")
-                test_results.append(("Cross-tenant settings access", "FAIL"))
+                print(f"❌ Failed to delete task: {response.status_code}")
+                results["failed"] += 1
 
-            # Test 3: Try to access notes from different tenant
-            print(f"\n[3] Testing notes access with wrong tenant")
-            response = await client.get(
-                f"{SYSTEM_SERVICE_URL}/api/v1/tenants/{fake_tenant_slug}/tools/notes",
-                headers=headers
-            )
-            if response.status_code in [403, 404]:
-                print(f"✅ Correctly denied notes access to wrong tenant (status: {response.status_code})")
-                test_results.append(("Cross-tenant notes access", "PASS"))
-            else:
-                print(f"❌ Should deny access but got: {response.status_code}")
-                test_results.append(("Cross-tenant notes access", "FAIL"))
+        # LogCalls CRUD
+        print("\n-- LogCalls --")
 
-            return test_results
+        # CREATE LogCall
+        print("[1] CREATE LogCall")
+        logcall_data = {
+            "phone_number": "+1234567890",
+            "call_type": "outgoing",
+            "status": "completed",
+            "notes": "Test call log"
+        }
 
-    async def run_all_tests(self):
-        """Run all security tests for System Service"""
-        print("\n" + "="*80)
-        print("SYSTEM SERVICE SECURITY TESTS")
-        print("="*80)
-        print(f"Started at: {datetime.now().isoformat()}")
+        response = await client.post(
+            f"{SYSTEM_SERVICE_URL}/api/v1/tenants/{self.tenant_slug}/tools/logcalls",
+            headers=headers,
+            json=logcall_data
+        )
 
-        all_results = []
+        if response.status_code == 201:
+            logcall = response.json()
+            self.created_logcall_id = logcall["id"]
+            print(f"✅ LogCall created: {self.created_logcall_id}")
+            results["passed"] += 1
+        else:
+            print(f"❌ Failed to create logcall: {response.status_code}")
+            results["failed"] += 1
 
-        try:
-            # Setup
-            await self.setup_tenant()
+        # READ LogCalls
+        print("[2] READ LogCalls")
+        response = await client.get(
+            f"{SYSTEM_SERVICE_URL}/api/v1/tenants/{self.tenant_slug}/tools/logcalls",
+            headers=headers
+        )
 
-            # Try to authenticate
-            await self.authenticate_tenant_owner()
+        if response.status_code == 200:
+            logcalls = response.json()
+            print(f"✅ Retrieved {len(logcalls)} logcalls")
+            results["passed"] += 1
+        else:
+            print(f"❌ Failed to list logcalls: {response.status_code}")
+            results["failed"] += 1
 
-            # Run tests
-            results1 = await self.test_endpoints_without_token()
-            all_results.extend(results1)
+        # Events CRUD
+        print("\n-- Events --")
 
-            results2 = await self.test_endpoints_with_token()
-            all_results.extend(results2)
+        # CREATE Event
+        print("[1] CREATE Event")
+        event_data = {
+            "title": "Test Event",
+            "description": "This is a test event",
+            "event_type": "meeting",
+            "status": "scheduled",
+            "start_date": datetime.now().isoformat(),
+            "end_date": (datetime.now() + timedelta(hours=1)).isoformat()
+        }
 
-            results3 = await self.test_cross_tenant_access()
-            all_results.extend(results3)
+        response = await client.post(
+            f"{SYSTEM_SERVICE_URL}/api/v1/tenants/{self.tenant_slug}/tools/events",
+            headers=headers,
+            json=event_data
+        )
 
-            # Summary
-            print("\n" + "="*80)
-            print("TEST SUMMARY")
-            print("="*80)
+        if response.status_code == 201:
+            event = response.json()
+            self.created_event_id = event["id"]
+            print(f"✅ Event created: {self.created_event_id}")
+            results["passed"] += 1
+        else:
+            print(f"❌ Failed to create event: {response.status_code}")
+            results["failed"] += 1
 
-            passed = sum(1 for _, status in all_results if status == "PASS")
-            failed = sum(1 for _, status in all_results if status == "FAIL")
-            skipped = sum(1 for _, status in all_results if status == "SKIP")
-            total = len(all_results)
-
-            print(f"\nTotal Tests: {total}")
-            print(f"✅ Passed: {passed}")
-            print(f"❌ Failed: {failed}")
-            print(f"⚠️  Skipped: {skipped}")
-
-            print("\nDetailed Results:")
-            for test_name, status in all_results:
-                symbol = "✅" if status == "PASS" else "❌" if status == "FAIL" else "⚠️"
-                print(f"  {symbol} {test_name}: {status}")
-
-            print("\n" + "="*80)
-            if failed == 0:
-                print("🎉 ALL SECURITY TESTS PASSED! 🎉")
-            else:
-                print(f"⚠️  {failed} tests failed - review security configuration")
-            print("="*80 + "\n")
-
-            return all_results
-
-        except Exception as e:
-            print(f"\n❌ Test execution failed: {str(e)}")
-            import traceback
-            traceback.print_exc()
-            return all_results
-
-
-# Main execution
-if __name__ == "__main__":
-    tester = TestSystemSecurity()
-    asyncio.run(tester.run_all_tests())
+        # READ Events
+        print("[2] READ Events")
+        response = await client.get(
