@@ -184,7 +184,7 @@ def create_tenant_admin(
                     ) VALUES (
                         :id, :email, :username, :password_hash,
                         :first_name, :last_name,
-                        'ACTIVE', true, true,
+                        'active', true, true,
                         NOW(), NOW()
                     ) RETURNING id
                 """),

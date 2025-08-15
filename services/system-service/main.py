@@ -416,7 +416,7 @@ async def initialize_tenant_schema(
         db.execute(
             text("""
                 INSERT INTO users (id, email, username, password_hash, first_name, last_name, status, is_active, is_verified)
-                VALUES (:id, :email, :username, :password_hash, :first_name, :last_name, 'ACTIVE'::userstatus, :is_active, :is_verified)
+                VALUES (:id, :email, :username, :password_hash, :first_name, :last_name, 'active'::userstatus, :is_active, :is_verified)
             """),
             {
                 "id": admin_user_id,

@@ -27,7 +27,7 @@ TENANT_SERVICE_URL = f"{BASE_URL}:8002"
 SYSTEM_SERVICE_URL = f"{BASE_URL}:8008"
 
 # Default super_admin credentials (from init.sql)
-SUPER_ADMIN_USERNAME = "admin"
+SUPER_ADMIN_USERNAME = "superadmin"
 SUPER_ADMIN_PASSWORD = "SuperAdmin123!"
 
 
